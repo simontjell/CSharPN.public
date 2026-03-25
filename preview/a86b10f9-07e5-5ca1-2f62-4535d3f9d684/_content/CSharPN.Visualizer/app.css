@@ -1,0 +1,466 @@
+/* ── Reset & base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    /* CPN Tools inspired color scheme */
+    --bg:        #ddd8c8;   /* warm beige canvas */
+    --surface:   #2a2d3a;   /* toolbar – keep dark for contrast */
+    --surface2:  #353848;
+    --border:    #4a4e60;
+    --text:      #e2e8f0;
+    --text-dim:  #9aa0b0;
+    --accent:    #4a90d9;
+    --accent2:   #7b68ee;
+    --green:     #2ecc71;
+    --yellow:    #f0c040;
+    --red:       #e74c3c;
+    --place-fill:    #ffffff;   /* white ellipses */
+    --place-stroke:  #5a3e28;   /* dark brown border */
+    --place-active:  #1a60c0;
+    --trans-fill:    #e8e4dc;   /* light warm grey */
+    --trans-stroke:  #5a3e28;
+    --trans-enabled: #228b22;   /* CPN Tools forest-green enabled */
+    --arc-color:     #5a3e28;   /* dark brown arcs */
+    --arc-active:    #1a60c0;
+    --token-dot:     #2060c0;
+}
+
+html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* Canvas area gets the beige CPN Tools background */
+.canvas-wrap {
+    background: var(--bg);
+}
+
+/* ── Visualizer layout ────────────────────────────────────────────────────── */
+.visualizer {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* ── Control bar ──────────────────────────────────────────────────────────── */
+.ctrl-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+
+.brand {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    flex-shrink: 0;
+}
+
+.model-select {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    outline: none;
+    min-width: 200px;
+}
+.model-select:focus { border-color: var(--accent); }
+
+.ctrl-group {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 14px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    white-space: nowrap;
+}
+.btn:hover:not(:disabled) { opacity: 0.85; transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(0); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-primary   { background: var(--accent);  color: #fff; }
+.btn-secondary { background: var(--surface2); color: var(--text); border-color: var(--border); }
+.btn-success   { background: var(--green);    color: #000; }
+.btn-warning   { background: var(--yellow);   color: #000; }
+
+/* ── Speed control ────────────────────────────────────────────────────────── */
+.speed-ctrl {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+}
+.speed-ctrl label { white-space: nowrap; }
+.speed-ctrl input[type=range] {
+    -webkit-appearance: none;
+    width: 90px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+.speed-ctrl input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--accent);
+    border-radius: 50%;
+}
+.speed-ctrl span { min-width: 36px; font-variant-numeric: tabular-nums; }
+
+/* ── Status pill ──────────────────────────────────────────────────────────── */
+.status-pill {
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+.status-ready    { background: #1a3a2a; color: var(--green); }
+.status-running  { background: #1a2a3a; color: var(--accent); animation: pulse 1.4s infinite; }
+.status-deadlock { background: #3a1a1a; color: var(--red); }
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+}
+
+/* ── Canvas ───────────────────────────────────────────────────────────────── */
+.canvas-wrap {
+    overflow: auto;
+    background: var(--bg);
+    position: relative;
+    /* Remove duplicate rule added after html,body block */
+}
+
+.net-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-dim);
+    font-size: 16px;
+}
+
+/* ── SVG elements ─────────────────────────────────────────────────────────── */
+.arrowhead { fill: var(--arc-color); }
+.arrowhead-active { fill: var(--arc-active); }
+
+.arc {
+    stroke: var(--arc-color);
+    stroke-width: 1.5;
+    fill: none;
+    transition: stroke 0.2s;
+}
+.arc-active {
+    stroke: var(--arc-active);
+    stroke-width: 2;
+}
+
+/* Transparent wide overlay — captures drag events to create/move bends.
+   pointer-events="all" is set via SVG attribute so it works on all browsers
+   regardless of stroke paint. */
+.arc-hit {
+    stroke: transparent;
+    stroke-width: 14;
+    fill: none;
+    cursor: crosshair;
+}
+
+/* Restyle arrowhead for active arcs via marker */
+.arc-active { marker-end: url(#ah-active); }
+
+/* Arc inscription text alongside arcs */
+.arc-inscription {
+    fill: #3a2810;
+    font-size: 11px;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    pointer-events: none;
+    user-select: none;
+}
+
+.place {
+    fill: var(--place-fill);
+    stroke: var(--place-stroke);
+    stroke-width: 2;
+    transition: fill 0.25s, stroke 0.25s, filter 0.25s;
+}
+.place.has-tokens { fill: #f0f8ff; }   /* very light blue tint when occupied */
+.place.place-active {
+    stroke: var(--place-active);
+    stroke-width: 3;
+    filter: url(#glow);
+}
+.place.just-fired {
+    fill: #e8f4ff;
+    stroke: var(--accent);
+    filter: url(#glow);
+}
+
+/* Place name inside the ellipse */
+.place-name-inner {
+    fill: #1c1008;
+    font-size: 12px;
+    font-weight: 600;
+    pointer-events: none;
+    user-select: none;
+}
+
+.trans {
+    fill: var(--trans-fill);
+    stroke: var(--trans-stroke);
+    stroke-width: 2;
+    transition: fill 0.2s, stroke 0.2s, filter 0.2s;
+}
+.trans.trans-enabled {
+    fill: #90ee90;           /* CPN Tools green */
+    stroke: var(--trans-enabled);
+    stroke-width: 2.5;
+    cursor: pointer;
+}
+.trans.just-fired {
+    fill: #ffe066;           /* amber – clearly distinct from enabled green */
+    stroke: #b08000;
+    filter: url(#glow);
+    animation: trans-flash 1.2s ease-out forwards;
+}
+
+@keyframes trans-flash {
+    0%   { fill: #ffe066; stroke: #b08000; filter: url(#glow); }
+    70%  { fill: #ffe066; stroke: #b08000; }
+    100% { fill: var(--trans-fill); stroke: var(--trans-stroke); filter: none; }
+}
+
+/* Transition name inside the rectangle */
+.trans-name-inner {
+    fill: #1c1008;
+    font-size: 11px;
+    font-weight: 600;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Guard expression below the transition name */
+.guard-label {
+    fill: #5a3e28;
+    font-size: 10px;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    pointer-events: none;
+    user-select: none;
+}
+
+.node-label {
+    fill: #5a3e28;
+    font-size: 11px;
+    text-anchor: middle;
+    dominant-baseline: hanging;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* ── CPN Tools-style place annotations ───────────────────────────────────── */
+
+/* Initial marking expression – shown above the ellipse, italic */
+.place-init-mark {
+    fill: #5a3e28;
+    font-size: 10px;
+    font-style: italic;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Color-set / type name – shown below the ellipse */
+.place-type {
+    fill: #5a3e28;
+    font-size: 10px;
+    font-weight: 600;
+    text-anchor: middle;
+    dominant-baseline: hanging;
+    pointer-events: none;
+    user-select: none;
+    letter-spacing: 0.4px;
+}
+
+/* Green token-count badge circle – at right edge of ellipse */
+.token-badge {
+    fill: #228b22;
+    stroke: #145214;
+    stroke-width: 1.2;
+}
+.token-badge.badge-empty {
+    fill: #b0a898;
+    stroke: #8a7a68;
+}
+
+/* Count number inside the badge */
+.badge-count {
+    fill: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    text-anchor: middle;
+    pointer-events: none;
+    user-select: none;
+    dominant-baseline: central;
+}
+
+/* Pale yellow box for current marking text (CPN Tools style) */
+.marking-box {
+    fill: #fffacd;
+    stroke: #8b6914;
+    stroke-width: 1;
+    opacity: 0.95;
+}
+
+/* Monospace marking text inside the box */
+.marking-text {
+    fill: #1c0e04;
+    font-size: 10px;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    text-anchor: start;
+    pointer-events: none;
+    user-select: none;
+}
+
+.node-group { cursor: grab; }
+.node-group:active { cursor: grabbing; }
+
+/* ── Info panel ───────────────────────────────────────────────────────────── */
+.info-panel {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 16px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    min-height: 40px;
+    flex-wrap: wrap;
+}
+
+.info-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+}
+
+.info-item {
+    font-size: 12px;
+    color: var(--text-dim);
+}
+.info-item strong {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+
+.fired-badge {
+    color: var(--yellow) !important;
+    font-weight: 600;
+}
+
+.clock-badge {
+    color: var(--green) !important;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+/* ── Page-group boundary boxes (hierarchical nets) ─────────────────────────── */
+
+.page-group-rect {
+    fill: none;
+    stroke-width: 1.5;
+    stroke-dasharray: 8 4;
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.page-group-label {
+    font-size: 11px;
+    font-style: italic;
+    font-family: var(--font-mono);
+    opacity: 0.75;
+    pointer-events: none;
+}
+
+.bindings-list {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    overflow: hidden;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.badge-deadlock {
+    background: #3a1a1a;
+    color: var(--red);
+    border: 1px solid #5a2020;
+    letter-spacing: 0.5px;
+    font-size: 12px;
+}
+
+.badge-binding {
+    background: var(--surface2);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+.badge-binding:hover {
+    background: #252e50;
+    border-color: var(--accent);
+}
+
+.badge-more {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px dashed var(--border);
+}
