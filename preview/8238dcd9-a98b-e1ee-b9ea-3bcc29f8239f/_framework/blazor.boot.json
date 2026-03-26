@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "CSharPN.Wasm",
   "resources": {
-    "hash": "sha256-/buEhbGMMNoZ3aBI5fyhLu5X3JxgK/Mxa5TjpjumX+Q=",
+    "hash": "sha256-u+nJH9Aulc6jpjAa6OGyJwmC/jMZ2sEs5Y+b60+edDA=",
     "jsModuleNative": {
       "dotnet.native.js": "sha256-A16ka545FHaB+QXjyJ4exXh7XpBAAIFnX8YkC4xAng8="
     },
@@ -47,9 +47,9 @@
       "System.Text.RegularExpressions.wasm": "sha256-vTjmo8W+mDOdlHRP0L2XPX6WOPBjjNP1eAT8UWYxM8I=",
       "System.Threading.wasm": "sha256-hLuk0j8llmBCwFHgiqd4b707bPbJbp93xvBHO6qCF/Q=",
       "System.Private.CoreLib.wasm": "sha256-NWqoEFSr3UVl715p3I4GboO/MbhtXxtCDKVhsx5mtLI=",
-      "CSharPN.Core.wasm": "sha256-Wi3izlumn9Ikl3j/YjkHNnVa5EjQMbSw6rYwcU4pLUg=",
-      "CSharPN.Visualizer.wasm": "sha256-KRHxagEvrPHnyvIpqG+hKzBi10VGv9jwiJcvd6jf/Tc=",
-      "CSharPN.Wasm.wasm": "sha256-zu6nDTdF9FPIrF5x1nFy0jDC3bTLApTo2fwg3jCNKiA="
+      "CSharPN.Core.wasm": "sha256-ovLpD5WCjvkki70lJg4efy0zWfz7dQe2WS/3VYxbZKQ=",
+      "CSharPN.Visualizer.wasm": "sha256-0iNwqqUeAcXhLvd7ZsdOZ8lu1n+nrhcedlMNqm2tCFw=",
+      "CSharPN.Wasm.wasm": "sha256-gYy+ENL7YYUvrb9Ft5NGOzzVicNtDML9kMx2RwL2sOo="
     }
   },
   "cacheBootResources": true,
