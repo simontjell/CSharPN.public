@@ -173,8 +173,9 @@ export function initDrag(dotNetRef, svgId) {
         return m ? [parseFloat(m[1]), parseFloat(m[2])] : [0, 0];
     }
 
-    let nodeDrag = null;  // { g, nodeId, offX, offY }
-    let arcDrag  = null;  // { fromId, toId, wpIndex, sx, sy, ex, ey, waypoints }
+    let nodeDrag     = null;   // { g, nodeId, offX, offY }
+    let arcDrag      = null;   // { fromId, toId, wpIndex, sx, sy, ex, ey, waypoints }
+    let nodeMoved    = false;  // true once the node actually moved — suppresses the ensuing click
 
     // ── mousedown ──────────────────────────────────────────────────────────
 
@@ -214,7 +215,8 @@ export function initDrag(dotNetRef, svgId) {
         if (!g) return;
         e.preventDefault();
         const [cx, cy] = parseTranslate(g);
-        nodeDrag = { g, nodeId: g.dataset.nodeId, offX: pt.x - cx, offY: pt.y - cy };
+        nodeDrag  = { g, nodeId: g.dataset.nodeId, offX: pt.x - cx, offY: pt.y - cy };
+        nodeMoved = false;
         g.style.cursor = 'grabbing';
     };
 
@@ -231,6 +233,7 @@ export function initDrag(dotNetRef, svgId) {
         }
         if (nodeDrag) {
             e.preventDefault();
+            nodeMoved = true;
             const pt = svgPt(e);
             const nx = pt.x - nodeDrag.offX, ny = pt.y - nodeDrag.offY;
             nodeDrag.g.setAttribute('transform', `translate(${nx},${ny})`);
@@ -261,6 +264,17 @@ export function initDrag(dotNetRef, svgId) {
         }
     };
 
+    // ── click: suppress if the mousedown turned into a drag ───────────────
+    // Runs in capture phase so it beats Blazor's bubble-phase @onclick handler.
+
+    const onClick = e => {
+        if (nodeMoved) {
+            nodeMoved = false;
+            e.stopImmediatePropagation();
+            e.preventDefault();
+        }
+    };
+
     // ── dblclick: remove nearest waypoint ─────────────────────────────────
 
     const onDblClick = e => {
@@ -284,8 +298,9 @@ export function initDrag(dotNetRef, svgId) {
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup',   onUp);
     svg.addEventListener('dblclick',   onDblClick);
+    svg.addEventListener('click',      onClick, true);  // capture phase — beats Blazor @onclick
 
-    _handlers.set(svgId, { svg, onDown, onMove, onUp, onDblClick });
+    _handlers.set(svgId, { svg, onDown, onMove, onUp, onDblClick, onClick });
 }
 
 export function disposeDrag(svgId) {
@@ -295,5 +310,6 @@ export function disposeDrag(svgId) {
     document.removeEventListener('mousemove', h.onMove);
     document.removeEventListener('mouseup',   h.onUp);
     h.svg.removeEventListener('dblclick',  h.onDblClick);
+    h.svg.removeEventListener('click',     h.onClick, true);
     _handlers.delete(svgId);
 }

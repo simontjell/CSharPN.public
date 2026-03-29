@@ -41,10 +41,16 @@ html, body {
 
 /* ── Visualizer layout ────────────────────────────────────────────────────── */
 .visualizer {
-    display: grid;
-    grid-template-rows: auto 1fr auto;
+    display: flex;
+    flex-direction: column;
     height: 100vh;
     overflow: hidden;
+}
+
+.canvas-wrap {
+    flex: 1 1 0;
+    overflow: auto;
+    min-height: 0;
 }
 
 /* ── Control bar ──────────────────────────────────────────────────────────── */
@@ -81,6 +87,13 @@ html, body {
     min-width: 200px;
 }
 .model-select:focus { border-color: var(--accent); }
+
+.model-name-label {
+    color: var(--text);
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 0 0.5rem;
+}
 
 .ctrl-group {
     display: flex;
@@ -463,4 +476,237 @@ html, body {
     background: transparent;
     color: var(--text-dim);
     border: 1px dashed var(--border);
+}
+
+/* ── Editor panel ─────────────────────────────────────────────────────────── */
+.editor-toggle {
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+/* Tab bar */
+.editor-tabs {
+    display: flex;
+    gap: 2px;
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    padding: 4px 12px;
+    text-transform: uppercase;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.tab-btn:hover { color: var(--text); }
+.tab-btn.tab-active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Annotation editor layout */
+.annot-editor {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 12px 4px;
+    gap: 6px;
+}
+
+.prop-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 60px;
+}
+
+.annot-warning {
+    background: #2a1f00;
+    border: 1px solid var(--yellow);
+    border-radius: 4px;
+    color: var(--yellow);
+    font-size: 12px;
+    padding: 5px 10px;
+    flex-shrink: 0;
+}
+
+.prop-hint {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin: 12px 0 0;
+    font-style: italic;
+}
+
+.prop-header {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 2px;
+}
+
+.prop-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.prop-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    width: 100px;
+    flex-shrink: 0;
+}
+
+.prop-input {
+    flex: 1;
+    background: #1a1d2a;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: #cdd6f4;
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+    font-size: 13px;
+    padding: 3px 8px;
+    outline: none;
+}
+
+.prop-input:focus { border-color: var(--accent); }
+
+.decls-row {
+    align-items: flex-start;
+    margin-top: 4px;
+}
+
+.prop-textarea {
+    flex: 1;
+    background: #1a1d2a;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: #cdd6f4;
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 4px 8px;
+    outline: none;
+    resize: none;
+}
+
+.prop-textarea:focus { border-color: var(--accent); }
+
+/* Selected node highlight in SVG */
+.node-sel ellipse, .node-sel rect {
+    stroke: var(--accent) !important;
+    stroke-width: 3px;
+}
+
+.editor-panel {
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    height: 300px;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.editor-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.btn-sm {
+    padding: 3px 10px;
+    font-size: 12px;
+}
+
+.editor-textarea {
+    flex: 1 1 0;
+    min-height: 0;
+    resize: none;
+    background: #1a1d2a;
+    color: #cdd6f4;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    padding: 10px 14px;
+    border: none;
+    outline: none;
+    tab-size: 4;
+}
+
+/* Diagnostics list */
+.diag-list {
+    list-style: none;
+    max-height: 80px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    padding: 4px 0;
+    background: #12141f;
+    flex-shrink: 0;
+}
+
+.diag-item {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 2px 12px;
+    font-size: 12px;
+    font-family: monospace;
+    line-height: 1.4;
+}
+
+.diag-badge {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.diag-error   .diag-badge { background: var(--red);    color: #fff; }
+.diag-warning .diag-badge { background: var(--yellow); color: #000; }
+.diag-info    .diag-badge { background: var(--accent);  color: #fff; }
+
+.diag-error   { color: #ff9999; }
+.diag-warning { color: #ffe066; }
+.diag-info    { color: #99ccff; }
+
+.diag-pos  { color: var(--text-dim); flex-shrink: 0; }
+.diag-code { color: var(--text-dim); flex-shrink: 0; }
+.diag-msg  { color: inherit; }
+
+.diag-ok {
+    padding: 4px 12px;
+    font-size: 12px;
+    color: var(--green);
+    border-top: 1px solid var(--border);
+    background: #0d1f14;
+    flex-shrink: 0;
+}
+
+.migration-info {
+    color: var(--text-dim);
+    font-style: italic;
 }
