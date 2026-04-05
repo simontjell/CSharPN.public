@@ -173,9 +173,10 @@ export function initDrag(dotNetRef, svgId) {
         return m ? [parseFloat(m[1]), parseFloat(m[2])] : [0, 0];
     }
 
-    let nodeDrag     = null;   // { g, nodeId, offX, offY }
+    let nodeDrag     = null;   // { g, nodeId, offX, offY, stickyArcs }
     let arcDrag      = null;   // { fromId, toId, wpIndex, sx, sy, ex, ey, waypoints }
     let nodeMoved    = false;  // true once the node actually moved — suppresses the ensuing click
+    // stickyArc entries: { fromId, toId, isFrom, wps, sx, sy, ex, ey, modified }
 
     // ── mousedown ──────────────────────────────────────────────────────────
 
@@ -218,6 +219,27 @@ export function initDrag(dotNetRef, svgId) {
         nodeDrag  = { g, nodeId: g.dataset.nodeId, offX: pt.x - cx, offY: pt.y - cy };
         nodeMoved = false;
         g.style.cursor = 'grabbing';
+
+        // Collect connected arcs whose endpoint waypoint is orthogonally aligned with this node.
+        // These can be "sticky" when the user holds Shift during the drag — the right-angle
+        // bend is preserved by moving the endpoint waypoint's Y together with the node.
+        const stickyArcs = [];
+        for (const pathEl of svg.querySelectorAll('[data-arc-path]')) {
+            const parts = (pathEl.dataset.arcPath ?? '').split('|');
+            if (parts.length !== 2) continue;
+            const [fnId, tnId] = parts;
+            const isFrom = fnId === g.dataset.nodeId;
+            const isTo   = tnId === g.dataset.nodeId;
+            if (!isFrom && !isTo) continue;
+            const wps = getArcWaypoints(pathEl);
+            if (wps.length < 2) continue;
+            const checkWp = isFrom ? wps[0] : wps[wps.length - 1];
+            if (Math.abs(checkWp.y - cy) > 12) continue;   // not orthogonally aligned
+            const sx = parseFloat(pathEl.dataset.arcSx), sy = parseFloat(pathEl.dataset.arcSy);
+            const ex = parseFloat(pathEl.dataset.arcEx), ey = parseFloat(pathEl.dataset.arcEy);
+            stickyArcs.push({ fromId: fnId, toId: tnId, isFrom, wps, sx, sy, ex, ey, modified: false });
+        }
+        nodeDrag.stickyArcs = stickyArcs;
     };
 
     // ── mousemove ──────────────────────────────────────────────────────────
@@ -237,6 +259,28 @@ export function initDrag(dotNetRef, svgId) {
             const pt = svgPt(e);
             const nx = pt.x - nodeDrag.offX, ny = pt.y - nodeDrag.offY;
             nodeDrag.g.setAttribute('transform', `translate(${nx},${ny})`);
+
+            // Shift held: preserve right-angle bends by sliding the endpoint waypoint's
+            // Y to match the node's new Y.  We update the path `d` attribute directly so
+            // that the subsequent updateConnectedArcs() picks up the new waypoints and
+            // recomputes border-points correctly.
+            if (e.shiftKey) {
+                for (const sa of nodeDrag.stickyArcs) {
+                    const pathEl = svg.querySelector(`[data-arc-path="${sa.fromId}|${sa.toId}"]`);
+                    if (!pathEl) continue;
+                    if (sa.isFrom) sa.wps[0] = { x: sa.wps[0].x, y: ny };
+                    else           sa.wps[sa.wps.length - 1] = { x: sa.wps[sa.wps.length - 1].x, y: ny };
+                    sa.modified = true;
+                    // Write updated waypoints into the DOM so updateConnectedArcs reads them
+                    const arcSx = parseFloat(pathEl.dataset.arcSx), arcSy = parseFloat(pathEl.dataset.arcSy);
+                    const arcEx = parseFloat(pathEl.dataset.arcEx), arcEy = parseFloat(pathEl.dataset.arcEy);
+                    const d = buildPolyPath(arcSx, arcSy, arcEx, arcEy, sa.wps);
+                    pathEl.setAttribute('d', d);
+                    const hitEl = svg.querySelector(`.arc-hit[data-arc-from="${sa.fromId}"][data-arc-to="${sa.toId}"]`);
+                    if (hitEl) hitEl.setAttribute('d', d);
+                }
+            }
+
             updateConnectedArcs(svg, nodeDrag.nodeId, parseTranslate);
         }
     };
@@ -260,6 +304,16 @@ export function initDrag(dotNetRef, svgId) {
                 nodeDrag.nodeId,
                 pt.x - nodeDrag.offX,
                 pt.y - nodeDrag.offY).catch(() => {});
+            // Finalize any sticky arc waypoints updated during a Shift-drag so that
+            // the Blazor component stores them as user bends (preserving the bends
+            // after re-render).
+            for (const sa of nodeDrag.stickyArcs) {
+                if (!sa.modified) continue;
+                dotNetRef.invokeMethodAsync('FinalizeArcWaypoints',
+                    sa.fromId, sa.toId,
+                    sa.wps.map(w => w.x),
+                    sa.wps.map(w => w.y)).catch(() => {});
+            }
             nodeDrag = null;
         }
     };
@@ -312,4 +366,105 @@ export function disposeDrag(svgId) {
     h.svg.removeEventListener('dblclick',  h.onDblClick);
     h.svg.removeEventListener('click',     h.onClick, true);
     _handlers.delete(svgId);
+}
+
+// ── Source navigation ─────────────────────────────────────────────────────────
+
+export function postNavigate(payload) {
+    fetch('/api/navigate', { method: 'POST', body: payload });
+}
+
+// ── SVG export ───────────────────────────────────────────────────────────────
+
+export function exportSvg(svgId, filename) {
+    const svg = document.getElementById(svgId);
+    if (!svg) return;
+
+    const clone = svg.cloneNode(true);
+
+    // Remove interactive-only elements
+    clone.querySelectorAll('.arc-hit, title').forEach(el => el.remove());
+    clone.removeAttribute('id');
+
+    // Resolve CSS custom properties from the live document
+    const cs = getComputedStyle(document.documentElement);
+    const v = name => cs.getPropertyValue(name).trim();
+
+    // Embed a self-contained <style> with all CSS variables resolved
+    const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    styleEl.textContent = `
+        .arrowhead { fill: ${v('--arc-color')}; }
+        .arrowhead-active { fill: ${v('--arc-active')}; }
+        .arc { fill: none; stroke: ${v('--arc-color')}; stroke-width: 1.6; }
+        .arc-active { stroke: ${v('--arc-active')}; stroke-width: 2.2; }
+        .arc-inscription { font: 11px 'Consolas','Menlo',monospace; fill: #333; }
+        .place { fill: ${v('--place-fill')}; stroke: ${v('--place-stroke')}; stroke-width: 1.8; }
+        .place.has-tokens { fill: #f0f8ff; }
+        .place.place-active { stroke: ${v('--place-active')}; stroke-width: 2.4; }
+        .place-name-inner { font: bold 12px 'Consolas','Menlo',monospace; fill: #333; text-anchor: middle; dominant-baseline: central; }
+        .place-init-mark { font: italic 10px 'Consolas','Menlo',monospace; fill: #888; text-anchor: middle; }
+        .place-type { font: 10px 'Consolas','Menlo',monospace; fill: #666; }
+        .trans { fill: ${v('--trans-fill')}; stroke: ${v('--trans-stroke')}; stroke-width: 1.8; }
+        .trans.trans-enabled { fill: #e0ffe0; stroke: ${v('--trans-enabled')}; stroke-width: 2.4; }
+        .trans-name-inner { font: bold 11px 'Consolas','Menlo',monospace; fill: #333; text-anchor: middle; dominant-baseline: central; }
+        .guard-label { font: italic 10px 'Consolas','Menlo',monospace; fill: #c44; text-anchor: middle; dominant-baseline: central; }
+        .token-badge { fill: ${v('--green')}; stroke: white; stroke-width: 1.5; }
+        .token-badge.badge-empty { fill: #ccc; stroke: #aaa; }
+        .badge-count { font: bold 11px sans-serif; fill: white; text-anchor: middle; dominant-baseline: central; }
+        .marking-box { fill: #fffacd; stroke: #8b6914; stroke-width: 1; opacity: 0.95; }
+        .marking-text { font: 11px 'Consolas','Menlo',monospace; fill: #333; }
+        .port-tag-box { fill: #d0e4f7; stroke: #2a5a8c; stroke-width: 1.2; }
+        .port-tag-text { font: bold 10px 'Consolas','Menlo',monospace; fill: #2a5a8c; text-anchor: middle; dominant-baseline: central; }
+        .page-group-rect { fill: none; stroke-width: 1.5; stroke-dasharray: 8 4; opacity: 0.55; }
+        .page-group-label { font: italic 11px 'Consolas','Menlo',monospace; opacity: 0.75; }
+    `;
+
+    // Insert style + white background before all content
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('width', '100%');
+    bg.setAttribute('height', '100%');
+    bg.setAttribute('fill', 'white');
+
+    const defs = clone.querySelector('defs') || clone.firstChild;
+    clone.insertBefore(styleEl, defs);
+
+    // Crop viewBox to the bounding box of actual content
+    // Temporarily insert clone into DOM to measure
+    clone.style.position = 'absolute';
+    clone.style.left = '-99999px';
+    document.body.appendChild(clone);
+    const bbox = clone.getBBox();
+    document.body.removeChild(clone);
+    clone.style.position = '';
+    clone.style.left = '';
+
+    const pad = 15;
+    const vx = Math.floor(bbox.x - pad);
+    const vy = Math.floor(bbox.y - pad);
+    const vw = Math.ceil(bbox.width + pad * 2);
+    const vh = Math.ceil(bbox.height + pad * 2);
+    clone.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
+    clone.setAttribute('width', vw);
+    clone.setAttribute('height', vh);
+
+    // Insert white background AFTER measuring (covers cropped area)
+    bg.setAttribute('x', vx);
+    bg.setAttribute('y', vy);
+    bg.setAttribute('width', vw);
+    bg.setAttribute('height', vh);
+    const firstContent = styleEl.nextSibling;
+    clone.insertBefore(bg, firstContent);
+
+    // Serialize and download
+    const xml = new XMLSerializer().serializeToString(clone);
+    const blob = new Blob(
+        ['<?xml version="1.0" encoding="UTF-8"?>\n', xml],
+        { type: 'image/svg+xml' }
+    );
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
 }
