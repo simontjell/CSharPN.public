@@ -154,7 +154,34 @@ function nearestWaypoint(waypoints, px, py, threshold = 15) {
     return best;
 }
 
-// ── Main export ────────────────────────────────────────────────────────────────
+// Parse all points (including start/end) from a polyline path "M x y L x y …".
+function parsePolyPoints(d) {
+    if (!d || /[CQcq]/.test(d)) return [];
+    const pts = [];
+    const tokens = d.trim().split(/\s+/);
+    for (let i = 0; i < tokens.length; i++) {
+        if (tokens[i] === 'M' || tokens[i] === 'L') {
+            pts.push({ x: parseFloat(tokens[i + 1]), y: parseFloat(tokens[i + 2]) });
+            i += 2;
+        }
+    }
+    return pts;
+}
+
+// Return the [data-arc-path] element whose polyline is closest to (px,py),
+// or null if nothing is within thresholdSvg SVG units.
+function nearestArcPath(svg, px, py, thresholdSvg) {
+    let best = null, bestDsq = thresholdSvg * thresholdSvg;
+    for (const pathEl of svg.querySelectorAll('[data-arc-path]')) {
+        const pts = parsePolyPoints(pathEl.getAttribute('d') ?? '');
+        for (let i = 0; i < pts.length - 1; i++) {
+            const dsq = ptSegDistSq(px, py, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y);
+            if (dsq < bestDsq) { bestDsq = dsq; best = pathEl; }
+        }
+    }
+    return best;
+}
+
 
 export function initDrag(dotNetRef, svgId) {
     disposeDrag(svgId);
@@ -184,40 +211,39 @@ export function initDrag(dotNetRef, svgId) {
 
     // ── mousedown ──────────────────────────────────────────────────────────
 
+    // Convert 10 screen pixels to SVG user units for proximity tests.
+    function arcThreshold() {
+        return 10 / (svg.clientWidth / svg.viewBox.baseVal.width);
+    }
+
     const onDown = e => {
         if (e.button !== 0) return;
         const pt = svgPt(e);
 
-        // Arc hit area: drag existing waypoint or insert a new one
-        const hitEl = e.target.closest('.arc-hit');
-        if (hitEl) {
-            e.preventDefault(); e.stopPropagation();
-            const fromId = hitEl.dataset.arcFrom;
-            const toId   = hitEl.dataset.arcTo;
-            const pathEl = svg.querySelector(`[data-arc-path="${fromId}|${toId}"]`);
-            if (!pathEl) return;
-
-            const sx = parseFloat(pathEl.dataset.arcSx), sy = parseFloat(pathEl.dataset.arcSy);
-            const ex = parseFloat(pathEl.dataset.arcEx), ey = parseFloat(pathEl.dataset.arcEy);
-            const waypoints = getArcWaypoints(pathEl);
-
-            const nearIdx = nearestWaypoint(waypoints, pt.x, pt.y);
-            if (nearIdx >= 0) {
-                // Drag the nearby existing waypoint
-                arcDrag = { fromId, toId, wpIndex: nearIdx, sx, sy, ex, ey, waypoints };
-            } else {
-                // Insert a new waypoint at click position
-                const insertIdx = findInsertIdx(sx, sy, ex, ey, waypoints, pt.x, pt.y);
-                waypoints.splice(insertIdx, 0, { x: pt.x, y: pt.y });
-                repaintArc(svg, fromId, toId, sx, sy, ex, ey, waypoints);
-                arcDrag = { fromId, toId, wpIndex: insertIdx, sx, sy, ex, ey, waypoints };
-            }
-            return;
-        }
-
-        // Node drag
+        // Node drag takes priority (nodes sit on top visually).
         const g = e.target.closest('[data-node-id]');
         if (!g) {
+            // Find the arc whose polyline is closest to the click.
+            const arcPathEl = nearestArcPath(svg, pt.x, pt.y, arcThreshold());
+            if (arcPathEl) {
+                e.preventDefault(); e.stopPropagation();
+                const [fromId, toId] = (arcPathEl.dataset.arcPath ?? '').split('|');
+                const sx = parseFloat(arcPathEl.dataset.arcSx), sy = parseFloat(arcPathEl.dataset.arcSy);
+                const ex = parseFloat(arcPathEl.dataset.arcEx), ey = parseFloat(arcPathEl.dataset.arcEy);
+                const waypoints = getArcWaypoints(arcPathEl);
+
+                const nearIdx = nearestWaypoint(waypoints, pt.x, pt.y);
+                if (nearIdx >= 0) {
+                    arcDrag = { fromId, toId, wpIndex: nearIdx, sx, sy, ex, ey, waypoints };
+                } else {
+                    const insertIdx = findInsertIdx(sx, sy, ex, ey, waypoints, pt.x, pt.y);
+                    waypoints.splice(insertIdx, 0, { x: pt.x, y: pt.y });
+                    repaintArc(svg, fromId, toId, sx, sy, ex, ey, waypoints);
+                    arcDrag = { fromId, toId, wpIndex: insertIdx, sx, sy, ex, ey, waypoints };
+                }
+                return;
+            }
+
             // Canvas pan — drag on empty background
             e.preventDefault();
             const vb = svg.viewBox.baseVal;
@@ -361,15 +387,11 @@ export function initDrag(dotNetRef, svgId) {
     // ── dblclick: remove nearest waypoint ─────────────────────────────────
 
     const onDblClick = e => {
-        const hitEl = e.target.closest('.arc-hit');
-        if (!hitEl) return;
-        const fromId = hitEl.dataset.arcFrom;
-        const toId   = hitEl.dataset.arcTo;
-        const pathEl = svg.querySelector(`[data-arc-path="${fromId}|${toId}"]`);
-        if (!pathEl) return;
-
         const pt = svgPt(e);
-        const waypoints = getArcWaypoints(pathEl);
+        const arcPathEl = nearestArcPath(svg, pt.x, pt.y, arcThreshold());
+        if (!arcPathEl) return;
+        const [fromId, toId] = (arcPathEl.dataset.arcPath ?? '').split('|');
+        const waypoints = getArcWaypoints(arcPathEl);
         const nearIdx = nearestWaypoint(waypoints, pt.x, pt.y, 20);
         if (nearIdx >= 0) {
             e.preventDefault(); e.stopPropagation();
