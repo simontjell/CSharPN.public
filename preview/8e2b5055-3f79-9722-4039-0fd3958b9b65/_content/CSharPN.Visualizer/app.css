@@ -417,6 +417,73 @@ html, body {
 
 /* ── Page-group boundary boxes (hierarchical nets) ─────────────────────────── */
 
+.zoom-ctrl {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.btn-icon {
+    background: var(--surface-alt, #2a2a2a);
+    border: 1px solid var(--border, #444);
+    color: var(--text, #eee);
+    font-size: 13px;
+    font-family: var(--font-mono);
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    line-height: 1.4;
+}
+
+.btn-icon:hover {
+    background: var(--surface-hover, #333);
+}
+
+.page-nav {
+    display: flex;
+    gap: 2px;
+    background: var(--surface-alt, #2a2a2a);
+    border-radius: 6px;
+    padding: 2px;
+}
+
+.page-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary, #999);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    padding: 3px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.page-btn:hover {
+    background: var(--surface-hover, #333);
+    color: var(--text, #eee);
+}
+
+.page-btn-active {
+    background: var(--accent, #3a78c9);
+    color: #fff;
+}
+
+.port-tag-box {
+    fill: #d0e4f7;
+    stroke: #2a5a8c;
+    stroke-width: 1.2;
+    pointer-events: none;
+}
+
+.port-tag-text {
+    font-size: 10px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    fill: #2a5a8c;
+    pointer-events: none;
+}
+
 .page-group-rect {
     fill: none;
     stroke-width: 1.5;
