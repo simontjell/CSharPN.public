@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    Razor Class Library: ships all components, services, layout and static assets.
+    Both the Blazor Server host (CSharPN.Visualizer.Server) and the Blazor WASM host
+    (CSharPN.Wasm) reference this project and add their own thin Program.cs + App.razor.
+
+    Static files (app.css, cpn-drag.js) are served by hosts at:
+      /_content/CSharPN.Visualizer/<file>
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>CSharPN.Visualizer</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Blazor + JS interop APIs used by the shared components -->
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CSharPN.Core\CSharPN.Core.csproj" />
+  </ItemGroup>
+
+</Project>

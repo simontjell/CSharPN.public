@@ -1,0 +1,848 @@
+@page "/"
+@inject SimulationService Sim
+@inject ModelCatalog Catalog
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>CSharPN Visualizer</PageTitle>
+
+<div class="visualizer">
+
+    @* ── Control bar ──────────────────────────────────────────────────────── *@
+    <header class="ctrl-bar">
+        <span class="brand">CSharPN</span>
+
+        @if (Sim.HideModelSelector)
+        {
+            <span class="model-name-label">@Sim.ModelName</span>
+        }
+        else
+        {
+            <select class="model-select" value="@_selectedModel" @onchange="OnModelChange">
+                @foreach (var entry in Catalog.Models)
+                {
+                    <option value="@entry.Name">@entry.Name</option>
+                }
+            </select>
+        }
+
+        <div class="ctrl-group">
+            <button class="btn btn-secondary" @onclick="OnReset" title="Reset to initial marking">
+                ↺ Reset
+            </button>
+            <button class="btn btn-primary" @onclick="OnStep"
+                    disabled="@(!CanStep)" title="Fire one random enabled transition">
+                ▶ Step
+            </button>
+            @if (Sim.IsRunning)
+            {
+                <button class="btn btn-warning" @onclick="OnPause" title="Pause simulation">
+                    ⏸ Pause
+                </button>
+            }
+            else
+            {
+                <button class="btn btn-success" @onclick="OnRun"
+                        disabled="@(!CanStep)" title="Run continuously">
+                    ▶▶ Run
+                </button>
+            }
+        </div>
+
+        <div class="speed-ctrl" title="Auto-step interval">
+            <label>Speed</label>
+            <input type="range" min="50" max="1500" step="50"
+                   value="@Sim.SpeedMs" @onchange="OnSpeedChange" />
+            <span>@(1000 / Sim.SpeedMs)×/s</span>
+        </div>
+
+        <div class="zoom-ctrl">
+            <button class="btn-icon" @onclick="ZoomOut" title="Zoom ud">−</button>
+            <button class="btn-icon" @onclick="ZoomFit" title="Tilpas">@((int)(_zoom * 100))%</button>
+            <button class="btn-icon" @onclick="ZoomIn" title="Zoom ind">+</button>
+            <button class="btn-icon" @onclick="OnAutoLayout" title="Reset layout (auto-arrange nodes)">⟳</button>
+            <button class="btn-icon" @onclick="ExportSvg" title="Export SVG">SVG</button>
+        </div>
+
+        <div class="status-pill @StatusClass">@StatusText</div>
+
+        @if (Sim.PageNames is { Count: > 1 })
+        {
+            <div class="page-nav">
+                @foreach (var name in Sim.PageNames)
+                {
+                    var isTop = name == Sim.PageNames[0];
+                    var isCurrent = isTop ? Sim.CurrentPage == null : Sim.CurrentPage == name;
+                    <button class="page-btn @(isCurrent ? "page-btn-active" : "")"
+                            @onclick="() => Sim.SwitchPage(isTop ? null : name)">
+                        @(isTop ? "▣ " : "  ├ ")@name
+                    </button>
+                }
+            </div>
+        }
+
+    </header>
+
+    @* ── Canvas ───────────────────────────────────────────────────────────── *@
+    <main class="canvas-wrap">
+        @if (_nodeById.Count == 0)
+        {
+            <div class="empty-state">Loading model…</div>
+        }
+        else
+        {
+            <svg id="cpn-net-canvas"
+                 viewBox="@Fmt(_panX) @Fmt(_panY) @Fmt(Sim.Layout.Width / _zoom) @Fmt(Sim.Layout.Height / _zoom)"
+                 xmlns="http://www.w3.org/2000/svg"
+                 style="width:100%;height:100%;display:block"
+                 @onwheel="OnWheel" @onwheel:preventDefault>
+
+                <defs>
+                    <marker id="ah" markerWidth="10" markerHeight="7"
+                            refX="9" refY="3.5" orient="auto">
+                        <polygon points="0 0,10 3.5,0 7" class="arrowhead" />
+                    </marker>
+                    <marker id="ah-active" markerWidth="10" markerHeight="7"
+                            refX="9" refY="3.5" orient="auto">
+                        <polygon points="0 0,10 3.5,0 7" class="arrowhead arrowhead-active" />
+                    </marker>
+                    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+                        <feGaussianBlur stdDeviation="3" result="blur" />
+                        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                </defs>
+
+                @* ── Page-group boundary boxes (behind everything) ──────── *@
+                @{
+                    var pageRects = ComputePageGroupRects();
+                    string[] pgColors = ["#3a78c9", "#4caf50", "#f0963a"];
+                }
+                @foreach (var pg in pageRects)
+                {
+                    var col = pgColors[pg.Index % pgColors.Length];
+                    <rect x="@Fmt(pg.X)" y="@Fmt(pg.Y)"
+                          width="@Fmt(pg.W)" height="@Fmt(pg.H)"
+                          class="page-group-rect" style="stroke: @col" rx="10" />
+                    @SvgTextAttr("page-group-label",
+                        $"x=\"{Fmt(pg.X + 10)}\" y=\"{Fmt(pg.Y + 18)}\" style=\"fill: {col}\"",
+                        pg.Name)
+                }
+
+                @* ── Arcs + inscriptions + interactive overlays ─────────────────── *@
+                @foreach (var arc in Sim.Layout.Arcs)
+                {
+                    var active  = IsArcActive(arc.FromId, arc.ToId);
+                    var cls     = "arc " + (active ? "arc-active" : "");
+                    var marker  = active ? "url(#ah-active)" : "url(#ah)";
+                    var inscrip = _arcInscriptions.GetValueOrDefault((arc.FromId, arc.ToId), "");
+                    var arcKey  = (arc.FromId, arc.ToId);
+                    var hasBends = _arcBends.TryGetValue(arcKey, out var bends) && bends!.Count > 0;
+
+                    // Raw border points (without arrowhead pullback) stored in data attrs for JS
+                    var (epX1, epY1, epBX, epBY) = ArcBorderPoints(arc);
+                    var arcPathKey = $"{arc.FromId}|{arc.ToId}";
+
+                    @if (hasBends)
+                    {
+                        // User-bent arc: polyline through waypoints
+                        var d = BentArcPath(epX1, epY1, epBX, epBY, bends!);
+                        <path data-arc-path="@arcPathKey"
+                              data-arc-sx="@Fmt(epX1)" data-arc-sy="@Fmt(epY1)"
+                              data-arc-ex="@Fmt(epBX)" data-arc-ey="@Fmt(epBY)"
+                              d="@d" class="@cls" marker-end="@marker" />
+                        <path d="@d" class="arc-hit" pointer-events="all"
+                              data-arc-from="@arc.FromId" data-arc-to="@arc.ToId"
+                              @onclick="() => OnArcClick(arc.FromId, arc.ToId)" />
+                        @if (inscrip != "")
+                        {
+                            var (ix, iy) = ArcInscriptionPos(epX1, epY1, epBX, epBY, null);
+                            @SvgTextAttr("arc-inscription",
+                                $"x=\"{Fmt(ix)}\" y=\"{Fmt(iy)}\" text-anchor=\"middle\" dominant-baseline=\"central\"",
+                                inscrip)
+                        }
+                    }
+                    else if (arc.Waypoints.Count == 0 || HasDragOverride(arc))
+                    {
+                        // Straight arc (no layout or user waypoints)
+                        var (x1, y1, bx, by) = ArcLine(arc);
+                        var straightD = BentArcPath(x1, y1, bx, by, []);
+                        <path data-arc-path="@arcPathKey"
+                              data-arc-sx="@Fmt(epX1)" data-arc-sy="@Fmt(epY1)"
+                              data-arc-ex="@Fmt(epBX)" data-arc-ey="@Fmt(epBY)"
+                              d="@straightD" class="@cls" marker-end="@marker" />
+                        <path d="@straightD" class="arc-hit" pointer-events="all"
+                              data-arc-from="@arc.FromId" data-arc-to="@arc.ToId"
+                              @onclick="() => OnArcClick(arc.FromId, arc.ToId)" />
+                        @if (inscrip != "")
+                        {
+                            var (ix, iy) = ArcInscriptionPos(x1, y1, bx, by, null);
+                            @SvgTextAttr("arc-inscription",
+                                $"x=\"{Fmt(ix)}\" y=\"{Fmt(iy)}\" text-anchor=\"middle\" dominant-baseline=\"central\"",
+                                inscrip)
+                        }
+                    }
+                    else
+                    {
+                        // Layout waypoints — render as polyline (orthogonal segments)
+                        var d = BentArcPath(epX1, epY1, epBX, epBY, arc.Waypoints.Select(w => (w.X, w.Y)).ToList());
+                        <path data-arc-path="@arcPathKey"
+                              data-arc-sx="@Fmt(epX1)" data-arc-sy="@Fmt(epY1)"
+                              data-arc-ex="@Fmt(epBX)" data-arc-ey="@Fmt(epBY)"
+                              d="@d" class="@cls" marker-end="@marker" />
+                        <path d="@d" class="arc-hit" pointer-events="all"
+                              data-arc-from="@arc.FromId" data-arc-to="@arc.ToId"
+                              @onclick="() => OnArcClick(arc.FromId, arc.ToId)" />
+                        @if (inscrip != "")
+                        {
+                            var (ix, iy) = ArcInscriptionPos(epX1, epY1, epBX, epBY, arc.Waypoints);
+                            @SvgTextAttr("arc-inscription",
+                                $"x=\"{Fmt(ix)}\" y=\"{Fmt(iy)}\" text-anchor=\"middle\" dominant-baseline=\"central\"",
+                                inscrip)
+                        }
+                    }
+                }
+
+                @* ── Places (CPN Tools style) ────────────────────────────── *@
+                @foreach (var node in Sim.Layout.Nodes.Where(n => n.IsPlace))
+                {
+                    var place      = _places.GetValueOrDefault(node.Id);
+                    var tokenCount = place?.TotalTokenCount ?? 0;
+                    var markStr    = place?.MarkingString        ?? "∅";
+                    var initStr    = place?.InitialMarkingString ?? "∅";
+                    var typeName   = place?.TypeName             ?? "";
+                    var active     = _activePlaceIds.Contains(node.Id);
+                    var justFired  = node.Id == _lastFiredId;
+                    var (nx, ny)   = NodePos(node.Id);
+                    var markTrunc  = ShortLabel(markStr, 22);
+                    var markBoxW   = Math.Max(56.0, Math.Min(160.0, markTrunc.Length * 7.0 + 10));
+
+                    <g transform="translate(@Fmt(nx),@Fmt(ny))"
+                       class="node-group"
+                       data-node-id="@node.Id"
+                       data-node-shape="place"
+                       data-node-rx="@Fmt(PlaceRX)" data-node-ry="@Fmt(PlaceRY)"
+                       @ondblclick="() => NavigateToSource(node.Id)">
+                        <title>@node.Label (@typeName)&#10;Initial: @initStr&#10;Current: @markStr&#10;Double-click to open in editor</title>
+
+                        @* Initial marking above (italic grey) *@
+                        @if (initStr != "∅")
+                        {
+                            @SvgTextAttr("place-init-mark",
+                                "x=\"0\" y=\"-42\" text-anchor=\"middle\"",
+                                ShortLabel(initStr, 26))
+                        }
+
+                        @* Ellipse body *@
+                        <ellipse rx="38" ry="25"
+                                 class="place @(tokenCount > 0 ? "has-tokens":"") @(active ? "place-active":"") @(justFired ? "just-fired":"")" />
+
+                        @* Place name INSIDE the ellipse *@
+                        @SvgTextAttr("place-name-inner",
+                            "x=\"0\" y=\"0\" text-anchor=\"middle\" dominant-baseline=\"central\"",
+                            ShortLabel(node.Label, 10))
+
+                        @* Current-marking box to the right *@
+                        @if (tokenCount > 0 && _expandedMarkings.Contains(node.Id))
+                        {
+                            <rect x="48" y="-13" width="@Fmt(markBoxW)" height="26"
+                                  class="marking-box" rx="3" />
+                            @SvgTextAttr("marking-text",
+                                "x=\"52\" y=\"0\" dominant-baseline=\"middle\"",
+                                markTrunc)
+                        }
+
+                        @* Token-count badge — at right edge of ellipse *@
+                        <circle cx="38" cy="0" r="12"
+                                class="token-badge @(tokenCount == 0 ? "badge-empty" : "")"
+                                style="cursor: pointer; pointer-events: all"
+                                @onclick="() => ToggleMarking(node.Id)" @onclick:stopPropagation="true" />
+                        @SvgTextAttr("badge-count",
+                            "x=\"38\" y=\"0\" dominant-baseline=\"central\" style=\"pointer-events:none\"",
+                            tokenCount.ToString())
+
+                        @* Type name below (like CPN Tools color-set annotation) *@
+                        @SvgText("place-type", "38", typeName)
+
+                        @* Port direction tag (In / Out / I/O) *@
+                        @{ var portLabel = _portLabels.GetValueOrDefault(node.Id, ""); }
+                        @if (portLabel != "")
+                        {
+                            var plw = portLabel.Length * 7 + 10;
+                            <rect x="@Fmt(-34 - plw)" y="-10" width="@Fmt(plw)" height="20"
+                                  class="port-tag-box" rx="3" />
+                            @SvgTextAttr("port-tag-text",
+                                $"x=\"{Fmt(-34 - plw / 2)}\" y=\"0\" text-anchor=\"middle\" dominant-baseline=\"central\"",
+                                portLabel)
+                        }
+                    </g>
+                }
+
+                @* ── Transitions (CPN Tools style) ────────────────────────── *@
+                @foreach (var node in Sim.Layout.Nodes.Where(n => !n.IsPlace))
+                {
+                    var enabled    = _enabledTransIds.Contains(node.Id);
+                    var justFired  = node.Id == _lastFiredId;
+                    var guardLabel = _guardLabels.GetValueOrDefault(node.Id, "");
+                    var (nx, ny)   = NodePos(node.Id);
+                    var hasGuard   = guardLabel != "";
+
+                    <g transform="translate(@Fmt(nx),@Fmt(ny))"
+                       class="node-group"
+                       data-node-id="@node.Id"
+                       data-node-shape="transition"
+                       data-node-w="@Fmt(TransW)" data-node-h="@Fmt(TransH)"
+                       style="cursor: @(enabled ? "pointer" : "default")"
+                       @onclick="() => OnTransitionClick(node.Id)"
+                       @ondblclick="() => NavigateToSource(node.Id)">
+                        <title>@node.Label@(enabled ? "\n(enabled – click to fire)" : "")@(hasGuard ? $"\nGuard: {guardLabel}" : "")&#10;Double-click to open in editor</title>
+
+                        @* Transition rectangle *@
+                        <rect x="-40" y="-20" width="80" height="40"
+                              class="trans @(enabled ? "trans-enabled":"") @(justFired ? "just-fired":"")" rx="3" />
+
+                        @* Name INSIDE the rectangle *@
+                        @SvgTextAttr("trans-name-inner",
+                            $"x=\"0\" y=\"{(hasGuard ? "-7" : "0")}\" text-anchor=\"middle\" dominant-baseline=\"central\"",
+                            ShortLabel(node.Label, 12))
+
+                        @* Guard expression below the name *@
+                        @if (hasGuard)
+                        {
+                            @SvgTextAttr("guard-label",
+                                "x=\"0\" y=\"8\" text-anchor=\"middle\" dominant-baseline=\"central\"",
+                                guardLabel)
+                        }
+                    </g>
+                }
+            </svg>
+        }
+    </main>
+
+    @* ── Info panel ───────────────────────────────────────────────────────── *@
+    <footer class="info-panel">
+        <div class="info-left">
+            <span class="info-item">Step <strong>@Sim.StepCount</strong></span>
+            <span class="info-item">Enabled <strong>@Sim.EnabledBindings.Count</strong></span>
+            @if (Sim.GlobalClock.HasValue)
+            {
+                <span class="info-item clock-badge">⏱ t&nbsp;=&nbsp;<strong>@Sim.GlobalClock.Value.Value</strong></span>
+            }
+            @if (_lastFiredName != "")
+            {
+                <span class="info-item fired-badge">⚡ @_lastFiredName</span>
+            }
+        </div>
+
+        <div class="bindings-list">
+            @if (Sim.IsDeadlock)
+            {
+                <span class="badge badge-deadlock">DEADLOCK</span>
+            }
+            else
+            {
+                @foreach (var (t, b) in Sim.EnabledBindings.Take(8))
+                {
+                    <button class="badge badge-binding"
+                            @onclick="() => OnFireBinding(t, b)"
+                            title="Fire this binding">
+                        @t.Name@(b.Values.Count > 0 ? $" [{b}]" : "")
+                    </button>
+                }
+                @if (Sim.EnabledBindings.Count > 8)
+                {
+                    <span class="badge badge-more">+@(Sim.EnabledBindings.Count - 8) more</span>
+                }
+            }
+        </div>
+    </footer>
+
+</div>
+
+@code {
+    // ── Constants ──────────────────────────────────────────────────────────────
+    private const double PlaceRX = 38;   // ellipse semi-axis horizontal
+    private const double PlaceRY = 25;   // ellipse semi-axis vertical
+    private const double TransW  = 80;   // rect width
+    private const double TransH  = 40;   // rect height
+
+    // ── JS interop ─────────────────────────────────────────────────────────────
+    private IJSObjectReference?          _jsModule;
+    private DotNetObjectReference<Home>? _selfRef;
+    private bool                         _needReinitDrag;
+
+    // ── Component state ────────────────────────────────────────────────────────
+    private string _selectedModel = "";
+    private string _lastFiredId   = "";
+    private string _lastFiredName = "";
+    private double _zoom = 1.0;
+    private double _panX = 0, _panY = 0;
+
+    private Dictionary<string, (double X, double Y)>             _dragOverrides = [];
+    private readonly Dictionary<(string, string), List<(double X, double Y)>> _arcBends = [];
+
+    // Derived views recomputed after each step
+    private Dictionary<string, IPlace>      _places          = [];
+    private Dictionary<string, LayoutNode>  _nodeById        = [];
+    private HashSet<string>                 _activePlaceIds  = [];
+    private HashSet<string>                 _enabledTransIds = [];
+
+    // Arc/guard annotations derived from the model structure
+    private Dictionary<(string From, string To), string> _arcInscriptions = [];
+    private Dictionary<string, string>                   _guardLabels     = [];
+    private Dictionary<string, string>                   _portLabels      = [];
+    private HashSet<string>                              _expandedMarkings = [];
+
+
+    // ── Lifecycle ──────────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        Sim.StateChanged += OnSimStateChanged;
+        if (!Sim.HideModelSelector && Catalog.Models.Count > 0)
+        {
+            _selectedModel = Catalog.Models[0].Name;
+            await LoadModel(_selectedModel);
+        }
+        // Single-model mode: model may already be loaded by ModelFileWatcher
+        // before this component initializes.
+        if (Sim.Model != null)
+        {
+            _dragOverrides = Sim.GetCurrentPageOverrides();
+            _expandedMarkings = Sim.GetCurrentExpandedMarkings();
+            RefreshDerived();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // RCL static files are served under /_content/CSharPN.Visualizer/
+            _jsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/CSharPN.Visualizer/cpn-drag.js");
+            _selfRef  = DotNetObjectReference.Create(this);
+            await _jsModule.InvokeVoidAsync("initDrag", _selfRef, "cpn-net-canvas");
+            _needReinitDrag = false;
+            return;
+        }
+        if (_needReinitDrag && _jsModule != null && _selfRef != null)
+        {
+            _needReinitDrag = false;
+            await _jsModule.InvokeVoidAsync("initDrag", _selfRef, "cpn-net-canvas");
+        }
+    }
+
+    [JSInvokable]
+    public void UpdateNodePosition(string id, double x, double y)
+    {
+        _dragOverrides[id] = (x, y);
+        Sim.SaveNodePosition(id, x, y);
+        InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public void FinalizeArcWaypoints(string fromId, string toId, double[] xs, double[] ys)
+    {
+        var key = (fromId, toId);
+        if (xs.Length == 0)
+            _arcBends.Remove(key);
+        else
+            _arcBends[key] = xs.Zip(ys, (x, y) => (x, y)).ToList();
+        InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public void RemoveArcWaypoint(string fromId, string toId, int index)
+    {
+        var key = (fromId, toId);
+        if (!_arcBends.TryGetValue(key, out var bends)) return;
+        if (index < 0 || index >= bends.Count) return;
+        bends.RemoveAt(index);
+        if (bends.Count == 0) _arcBends.Remove(key);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private string? _lastLoadedModelName;
+    private string? _lastPageName;
+
+    private void OnSimStateChanged()
+        => InvokeAsync(() =>
+        {
+            if (Sim.ModelName != _lastLoadedModelName)
+            {
+                _lastLoadedModelName = Sim.ModelName;
+                _lastPageName = Sim.CurrentPage;
+                _dragOverrides = Sim.GetCurrentPageOverrides();
+                _expandedMarkings = Sim.GetCurrentExpandedMarkings();
+                _needReinitDrag = true;
+            }
+            if (Sim.CurrentPage != _lastPageName)
+            {
+                _lastPageName = Sim.CurrentPage;
+                _dragOverrides = Sim.GetCurrentPageOverrides();
+                _expandedMarkings = Sim.GetCurrentExpandedMarkings();
+                _needReinitDrag = true;
+            }
+            RefreshDerived();
+            StateHasChanged();
+        });
+
+    private bool   CanStep     => !Sim.IsRunning && !Sim.IsDeadlock && Sim.Model != null;
+    private string StatusText  => Sim.IsDeadlock ? "Deadlock"
+                                : Sim.IsRunning  ? "Running…"
+                                : Sim.Model == null ? "No model" : "Ready";
+    private string StatusClass => Sim.IsDeadlock ? "status-deadlock"
+                                : Sim.IsRunning  ? "status-running" : "status-ready";
+
+    // ── Control handlers ───────────────────────────────────────────────────────
+
+    private async Task OnModelChange(ChangeEventArgs e)
+    {
+        _selectedModel = e.Value?.ToString() ?? "";
+        await LoadModel(_selectedModel);
+    }
+
+    private async Task OnReset()
+    {
+        _lastFiredId   = "";
+        _lastFiredName = "";
+        await Sim.ResetAsync();
+    }
+
+    private async Task OnStep()  { if (CanStep) await Sim.StepAsync(); }
+    private async Task OnRun()   { if (CanStep) _ = Sim.StartRunAsync(); await Task.CompletedTask; }
+    private void       OnPause() => Sim.PauseRun();
+
+    private void OnSpeedChange(ChangeEventArgs e)
+        => Sim.SpeedMs = int.TryParse(e.Value?.ToString(), out var v) ? v : 300;
+
+    private async Task OnFireBinding(Transition t, BindingSnapshot b)
+    {
+        await Sim.FireAsync(t, b);
+        _lastFiredId   = t.Name;
+        _lastFiredName = t.Name;
+        RefreshDerived();
+        _ = ClearLastFiredAsync();
+    }
+
+    private async Task ClearLastFiredAsync()
+    {
+        await Task.Delay(1200);
+        _lastFiredId = "";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnTransitionClick(string id)
+    {
+        // If viewing top page and clicking a substitution transition, drill into it
+        if (Sim.CurrentPage == null && Sim.PageNames is { Count: > 1 })
+        {
+            var subPageName = Sim.PageGroups?
+                .FirstOrDefault(pg => Sim.Model is HierarchicalCpnModel h
+                    && h.SubPageLinks.Any(l => l.SubstitutionName == id && l.PageName == pg.PageName))
+                ?.PageName;
+            if (subPageName != null)
+            {
+                Sim.SwitchPage(subPageName);
+                _dragOverrides = Sim.GetCurrentPageOverrides();
+                _expandedMarkings = Sim.GetCurrentExpandedMarkings();
+                _needReinitDrag = true;
+                RefreshDerived();
+                return;
+            }
+        }
+
+        var pair = Sim.EnabledBindings.FirstOrDefault(p => p.Transition.Name == id);
+        if (pair.Transition != null) await OnFireBinding(pair.Transition, pair.Binding);
+    }
+
+    private void OnArcClick(string fromId, string toId)
+    {
+        // TODO: arc selection for future editor mode
+    }
+
+    private async Task ExportSvg()
+    {
+        if (_jsModule == null) return;
+        var filename = (Sim.CurrentPage ?? Sim.ModelName) + ".svg";
+        await _jsModule.InvokeVoidAsync("exportSvg", "cpn-net-canvas", filename);
+    }
+
+    private void OnWheel(WheelEventArgs e)
+    {
+        if (!e.CtrlKey) return;   // trackpad scroll → handled by JS pan
+        _zoom *= e.DeltaY < 0 ? 1.1 : 1 / 1.1;
+        _zoom = Math.Clamp(_zoom, 0.3, 5.0);
+    }
+
+    [JSInvokable]
+    public void UpdatePan(double panX, double panY)
+    {
+        _panX = panX;
+        _panY = panY;
+    }
+
+    private void ZoomIn()  { _zoom = Math.Min(5.0, _zoom * 1.25); }
+    private void ZoomOut() { _zoom = Math.Max(0.3, _zoom / 1.25); }
+    private void ZoomFit() { _zoom = 1.0; _panX = 0; _panY = 0; }
+
+    private void OnAutoLayout()
+    {
+        // Clear all user-placed positions and arc bends for the current page
+        _dragOverrides.Clear();
+        _arcBends.Clear();
+        Sim.ResetNodePositions();
+        _panX = 0; _panY = 0; _zoom = 1.0;
+    }
+
+    private async Task NavigateToSource(string elementId)
+    {
+        if (Sim.ModelFilePath == null || _jsModule == null) return;
+        var line = Sim.SourceMap.GetValueOrDefault(elementId, 1);
+        var payload = $"{Sim.ModelFilePath}:{line}";
+        await _jsModule.InvokeVoidAsync("postNavigate", payload);
+    }
+
+    private void ToggleMarking(string placeId)
+    {
+        if (Sim.ToggleExpandedMarking(placeId))
+            _expandedMarkings.Add(placeId);
+        else
+            _expandedMarkings.Remove(placeId);
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    private async Task LoadModel(string name)
+    {
+        var entry = Catalog.Models.FirstOrDefault(m => m.Name == name);
+        if (entry == null) return;
+        _lastFiredId   = "";
+        _lastFiredName = "";
+        await Sim.LoadModelAsync(entry.Factory(), name);
+        _panX = 0; _panY = 0;
+        _dragOverrides = Sim.GetCurrentPageOverrides();
+                _expandedMarkings = Sim.GetCurrentExpandedMarkings();
+        if (_jsModule != null && _selfRef != null)
+            await _jsModule.InvokeVoidAsync("initDrag", _selfRef, "cpn-net-canvas");
+        RefreshDerived();
+    }
+
+    private void RefreshDerived()
+    {
+        if (Sim.Model == null) return;
+        _nodeById = Sim.Layout.Nodes.ToDictionary(n => n.Id);
+        _places   = Sim.Model.Places.ToDictionary(p => p.Name);
+
+        _activePlaceIds = Sim.EnabledBindings
+            .SelectMany(eb => eb.Transition.GetArcViews()
+                .Where(av => av.Direction == ArcDirection.Input)
+                .Select(av => av.Place.Name))
+            .ToHashSet();
+
+        _enabledTransIds = Sim.EnabledBindings
+            .Select(eb => eb.Transition.Name)
+            .ToHashSet();
+
+        // Arc inscriptions and guard labels (constant per model load)
+        _arcInscriptions.Clear();
+        _guardLabels.Clear();
+        foreach (var t in Sim.Model.Transitions)
+        {
+            _guardLabels[t.Name] = t.GuardLabel;
+            foreach (var av in t.GetArcViews())
+            {
+                if (av.Inscription == "") continue;
+                var key = av.Direction == ArcDirection.Input
+                    ? (av.Place.Name, t.Name)
+                    : (t.Name, av.Place.Name);
+                _arcInscriptions[key] = av.Inscription;
+            }
+        }
+
+        // Port labels for hierarchical page views
+        _portLabels.Clear();
+        if (Sim.PageGroups != null)
+            foreach (var pg in Sim.PageGroups)
+                foreach (var port in pg.Ports)
+                    _portLabels.TryAdd(port.PlaceName, port.Direction switch
+                    {
+                        PortType.In    => "In",
+                        PortType.Out   => "Out",
+                        PortType.InOut => "I/O",
+                        _              => ""
+                    });
+    }
+
+    // ── Page group helpers ─────────────────────────────────────────────────────
+
+    private record PageGroupRect(string Name, double X, double Y, double W, double H, int Index);
+
+    private List<PageGroupRect> ComputePageGroupRects()
+    {
+        var result = new List<PageGroupRect>();
+        if (Sim.PageGroups is not { Count: > 0 }) return result;
+
+        for (int i = 0; i < Sim.PageGroups.Count; i++)
+        {
+            var group  = Sim.PageGroups[i];
+            double minX = double.MaxValue, minY = double.MaxValue;
+            double maxX = double.MinValue, maxY = double.MinValue;
+            bool any = false;
+
+            foreach (var id in group.PlaceIds.Concat(group.TransitionIds))
+            {
+                if (!_nodeById.ContainsKey(id)) continue;
+                var (nx, ny) = NodePos(id);
+                if (nx < minX) minX = nx;  if (nx > maxX) maxX = nx;
+                if (ny < minY) minY = ny;  if (ny > maxY) maxY = ny;
+                any = true;
+            }
+
+            if (!any) continue;
+            const double pad = 55;
+            result.Add(new(group.PageName,
+                minX - pad, minY - pad,
+                maxX - minX + pad * 2,
+                maxY - minY + pad * 2,
+                i));
+        }
+        return result;
+    }
+
+    // ── SVG geometry ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the raw border points of the arc's source and target nodes,
+    /// computed toward the first/last waypoint direction (falling back to the
+    /// target/source centre when no waypoints exist).
+    /// User bends take priority over layout waypoints.
+    /// </summary>
+    private (double x1, double y1, double bx, double by) ArcBorderPoints(LayoutArc arc)
+    {
+        if (!_nodeById.TryGetValue(arc.FromId, out var fn) ||
+            !_nodeById.TryGetValue(arc.ToId,   out var tn)) return (0, 0, 0, 0);
+        var (fx, fy) = NodePos(arc.FromId);
+        var (tx, ty) = NodePos(arc.ToId);
+
+        _arcBends.TryGetValue((arc.FromId, arc.ToId), out var bends);
+        var firstPt = bends is { Count: > 0 } ? (bends[0].X,   bends[0].Y)
+                    : arc.Waypoints.Count > 0  ? (arc.Waypoints[0].X, arc.Waypoints[0].Y)
+                    : (tx, ty);
+        var lastPt  = bends is { Count: > 0 } ? (bends[^1].X,  bends[^1].Y)
+                    : arc.Waypoints.Count > 0  ? (arc.Waypoints[^1].X, arc.Waypoints[^1].Y)
+                    : (fx, fy);
+
+        var (x1, y1) = NodeBorder(fn, fx, fy, firstPt.Item1, firstPt.Item2);
+        var (bx, by) = NodeBorder(tn, tx, ty, lastPt.Item1,  lastPt.Item2);
+        return (x1, y1, bx, by);
+    }
+
+    /// <summary>
+    /// Builds a polyline SVG path string through the given waypoints,
+    /// pulling the endpoint back 9 px so the arrowhead tip sits on the node border.
+    /// </summary>
+    private string BentArcPath(double x1, double y1, double bx, double by,
+                                List<(double X, double Y)> bends)
+    {
+        var lastX = bends.Count > 0 ? bends[^1].X : x1;
+        var lastY = bends.Count > 0 ? bends[^1].Y : y1;
+        var dx = lastX - bx; var dy = lastY - by;
+        var dist = Math.Sqrt(dx * dx + dy * dy);
+        var x2 = dist > 1 ? bx + 9 * dx / dist : bx;
+        var y2 = dist > 1 ? by + 9 * dy / dist : by;
+
+        var sb = new System.Text.StringBuilder($"M {Fmt(x1)} {Fmt(y1)}");
+        foreach (var (wx, wy) in bends) sb.Append($" L {Fmt(wx)} {Fmt(wy)}");
+        sb.Append($" L {Fmt(x2)} {Fmt(y2)}");
+        return sb.ToString();
+    }
+
+    private (double X, double Y) NodePos(string id)
+    {
+        if (_dragOverrides.TryGetValue(id, out var p)) return p;
+        return _nodeById.TryGetValue(id, out var nd) ? (nd.X, nd.Y) : (0, 0);
+    }
+
+    private bool HasDragOverride(LayoutArc arc)
+        => _dragOverrides.ContainsKey(arc.FromId) || _dragOverrides.ContainsKey(arc.ToId);
+
+    private (double x, double y) NodeBorder(LayoutNode nd, double cx, double cy, double tx, double ty)
+        => nd.IsPlace
+            ? LayoutEngine.EllipseBorderPoint(cx, cy, PlaceRX, PlaceRY, tx, ty)
+            : LayoutEngine.RectBorderPoint(cx, cy, TransW, TransH, tx, ty);
+
+    private (double x1, double y1, double x2, double y2) ArcLine(LayoutArc arc)
+    {
+        if (!_nodeById.TryGetValue(arc.FromId, out var fn) ||
+            !_nodeById.TryGetValue(arc.ToId,   out var tn)) return (0,0,0,0);
+
+        var (fx, fy) = NodePos(arc.FromId);
+        var (tx, ty) = NodePos(arc.ToId);
+        var (x1, y1) = NodeBorder(fn, fx, fy, tx, ty);
+        var (bx, by) = NodeBorder(tn, tx, ty, fx, fy);
+
+        return (x1, y1, bx, by);
+    }
+
+    private static (double x, double y) ArcInscriptionPos(
+        double x1, double y1, double x2, double y2)
+        => ArcInscriptionPos(x1, y1, x2, y2, null);
+
+    private static (double x, double y) ArcInscriptionPos(
+        double x1, double y1, double x2, double y2,
+        IReadOnlyList<(double X, double Y)>? waypoints)
+    {
+        double mx, my;
+        if (waypoints is { Count: > 0 })
+        {
+            // Use midpoint of the polyline for arcs with bends
+            int mid = waypoints.Count / 2;
+            mx = waypoints[mid].X;
+            my = waypoints[mid].Y;
+        }
+        else
+        {
+            mx = (x1 + x2) / 2; my = (y1 + y2) / 2;
+        }
+        double dx = x2 - x1, dy = y2 - y1;
+        double len = Math.Sqrt(dx*dx + dy*dy);
+        if (len > 1) { mx -= dy/len * 12; my += dx/len * 12; }
+        return (mx, my);
+    }
+
+    private bool IsArcActive(string fromId, string toId)
+        => (_activePlaceIds.Contains(fromId) && _enabledTransIds.Contains(toId))
+        || _enabledTransIds.Contains(fromId);
+
+    private static string ShortLabel(string label, int maxLen)
+        => label.Length <= maxLen ? label : label[..maxLen] + "…";
+
+    private static string Fmt(double v)
+        => v.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static MarkupString SvgText(string cls, string? y, string content)
+    {
+        var enc   = System.Net.WebUtility.HtmlEncode(content);
+        var yPart = y != null ? $" y=\"{y}\"" : "";
+        return (MarkupString)$"<text class=\"{cls}\"{yPart}>{enc}</text>";
+    }
+
+    private static MarkupString SvgTextAttr(string cls, string attrs, string content)
+    {
+        var enc = System.Net.WebUtility.HtmlEncode(content);
+        return (MarkupString)$"<text class=\"{cls}\" {attrs}>{enc}</text>";
+    }
+
+    // ── Disposal ───────────────────────────────────────────────────────────────
+
+    public async ValueTask DisposeAsync()
+    {
+        Sim.StateChanged -= OnSimStateChanged;
+        _selfRef?.Dispose();
+        if (_jsModule != null)
+        {
+            try { await _jsModule.InvokeVoidAsync("disposeDrag", "cpn-net-canvas"); } catch { }
+            await _jsModule.DisposeAsync();
+        }
+    }
+}

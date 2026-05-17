@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <!-- Blazor WASM host – all logic lives in the CSharPN.Visualizer RCL. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>CSharPN.Wasm</RootNamespace>
+    <!-- Disable Brotli/gzip compression so the standalone packer can serve
+         raw bytes from the VFS without a decompression step. -->
+    <BlazorEnableCompression>false</BlazorEnableCompression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CSharPN.Visualizer\CSharPN.Visualizer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.*" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

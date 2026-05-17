@@ -1,0 +1,12 @@
+@using CSharPN.Visualizer.Components
+
+<Router AppAssembly="typeof(Routes).Assembly"
+        AdditionalAssemblies="new[] { typeof(CSharPN.Visualizer.Components.Routes).Assembly }">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" />
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <p>Page not found.</p>
+    </NotFound>
+</Router>

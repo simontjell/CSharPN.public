@@ -1,0 +1,39 @@
+{
+  "name": "cpn-preview",
+  "displayName": "CPN Preview",
+  "description": "Open a CPN model file in the editor and preview the live simulation in a side panel (starts CSharPN Visualizer Server automatically).",
+  "version": "0.5.0",
+  "publisher": "simontjell",
+  "license": "MIT",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onLanguage:csharp"],
+  "main": "./extension.js",
+  "repository": { "url": "https://github.com/simontjell/CSharPN/" },
+  "contributes": {
+    "commands": [
+      {
+        "command": "cpn.openPreview",
+        "title": "CPN: Open Preview",
+        "icon": "$(open-preview)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "cpn.openPreview",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
+        "when": "editorLangId == csharp"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "cpn.openPreview",
+          "when": "resourceExtname == .cs",
+          "group": "navigation"
+        }
+      ]
+    }
+  }
+}

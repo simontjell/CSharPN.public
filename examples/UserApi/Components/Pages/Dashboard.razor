@@ -1,0 +1,337 @@
+@page "/dashboard"
+@inject UserManagementModel Model
+@inject CpnApiHost ApiHost
+@implements IDisposable
+
+<PageTitle>CSharPN · User API Dashboard</PageTitle>
+
+<style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Segoe UI", system-ui, sans-serif; background: #0f1117; color: #e2e8f0; }
+    .shell { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+    h1  { font-size: 1.6rem; font-weight: 700; color: #7dd3fc; margin-bottom: 4px; }
+    h2  { font-size: 1.1rem; font-weight: 600; color: #94a3b8; margin: 28px 0 10px; text-transform: uppercase; letter-spacing: .05em; }
+    h3  { font-size: .9rem;  font-weight: 600; color: #64748b; margin: 16px 0 6px; }
+    p   { color: #94a3b8; font-size: .9rem; line-height: 1.6; }
+
+    .subtitle { color: #64748b; font-size: .9rem; margin-bottom: 24px; }
+
+    /* Grid ------------------------------------------------------------------ */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @@media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    /* Cards ------------------------------------------------------------------ */
+    .card  { background: #1e2330; border: 1px solid #2d3748; border-radius: 10px; padding: 16px; }
+
+    /* Tables ----------------------------------------------------------------- */
+    table  { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    th     { background: #0f1117; color: #64748b; text-align: left;
+             padding: 6px 10px; border-bottom: 1px solid #2d3748; }
+    td     { padding: 6px 10px; border-bottom: 1px solid #1e2330; color: #cbd5e1; }
+    tr:last-child td { border-bottom: none; }
+    .empty { color: #475569; font-style: italic; padding: 10px; text-align: center; }
+
+    /* Badges ----------------------------------------------------------------- */
+    .badge        { display: inline-block; padding: 2px 8px; border-radius: 4px;
+                    font-size: .75rem; font-weight: 600; }
+    .badge-ok     { background: #14532d; color: #86efac; }
+    .badge-fail   { background: #450a0a; color: #fca5a5; }
+
+    /* Code / curl ------------------------------------------------------------ */
+    pre    { background: #0f1117; border: 1px solid #2d3748; border-radius: 6px;
+             padding: 10px 14px; font-size: .78rem; overflow-x: auto;
+             color: #a5f3fc; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+    code   { font-family: "Cascadia Code", "Fira Code", "Consolas", monospace; }
+
+    /* Forms ------------------------------------------------------------------ */
+    .form-row  { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    input[type=text], input[type=password], input[type=email]
+               { flex: 1; min-width: 160px; background: #0f1117; border: 1px solid #374151;
+                 border-radius: 6px; color: #e2e8f0; padding: 6px 10px; font-size: .85rem; }
+    button     { background: #1d4ed8; color: #fff; border: none; border-radius: 6px;
+                 padding: 6px 16px; cursor: pointer; font-size: .85rem; }
+    button:hover { background: #2563eb; }
+    button:disabled { background: #374151; cursor: default; }
+
+    .result    { margin-top: 8px; padding: 8px 12px; border-radius: 6px; font-size: .82rem; }
+    .result.ok   { background: #14532d; color: #86efac; }
+    .result.fail { background: #450a0a; color: #fca5a5; }
+    .result.info { background: #1e3a5f; color: #93c5fd; }
+
+    /* Token chip ------------------------------------------------------------- */
+    .tok { font-family: monospace; background: #1e3a5f; color: #93c5fd;
+           padding: 1px 6px; border-radius: 4px; font-size: .8em; }
+</style>
+
+<div class="shell">
+
+    <nav style="display:flex; gap:16px; margin-bottom:16px; font-size:.85rem;">
+        <a href="/dashboard" style="color:#7dd3fc; text-decoration:none; font-weight:600;">Dashboard</a>
+        <a href="/" style="color:#94a3b8; text-decoration:none;">CPN Simulator</a>
+    </nav>
+
+    <h1>CSharPN · User Management API</h1>
+    <p class="subtitle">
+        This API is driven entirely by the CPN model below — every HTTP request
+        is a token flowing through a transition.
+    </p>
+
+    @* ── Model State ───────────────────────────────────────────────────────── *@
+    <h2>Model State (live)</h2>
+    <div class="grid-2">
+
+        <div class="card">
+            <h3>Users (@_users.Count)</h3>
+            @if (_users.Count == 0)
+            {
+                <p class="empty">No users yet — register one below</p>
+            }
+            else
+            {
+                <table>
+                    <tr><th>Email</th><th>Password (demo)</th></tr>
+                    @foreach (var u in _users)
+                    {
+                        <tr><td>@u.Email</td><td>@u.Password</td></tr>
+                    }
+                </table>
+            }
+        </div>
+
+        <div class="card">
+            <h3>Active Sessions (@_sessions.Count)</h3>
+            @if (_sessions.Count == 0)
+            {
+                <p class="empty">No active sessions</p>
+            }
+            else
+            {
+                <table>
+                    <tr><th>Email</th><th>Token</th></tr>
+                    @foreach (var s in _sessions)
+                    {
+                        <tr><td>@s.Email</td><td><span class="tok">@s.Token</span></td></tr>
+                    }
+                </table>
+            }
+        </div>
+
+        <div class="card">
+            <h3>Pending Reset Tokens (@_resetTokens.Count)</h3>
+            @if (_resetTokens.Count == 0)
+            {
+                <p class="empty">No pending resets</p>
+            }
+            else
+            {
+                <table>
+                    <tr><th>Email</th><th>Token</th></tr>
+                    @foreach (var r in _resetTokens)
+                    {
+                        <tr><td>@r.Email</td><td><span class="tok">@r.Token</span></td></tr>
+                    }
+                </table>
+            }
+        </div>
+
+        <div class="card">
+            <h3>CPN Transitions fired: @_firingCount</h3>
+            @if (_lastResult is not null)
+            {
+                <div class="result @(_lastResult.Ok ? "ok" : "fail")">
+                    <strong>@_lastEndpoint</strong>
+                    — @_lastResult.Message
+                    @if (_lastResult.Token is not null)
+                    {
+                        <span> · token: <span class="tok">@_lastResult.Token</span></span>
+                    }
+                </div>
+            }
+        </div>
+
+    </div>
+
+    @* ── Interactive forms ──────────────────────────────────────────────────── *@
+    <h2>Try it here</h2>
+    <div class="grid-2">
+
+        @* Register *@
+        <div class="card">
+            <h3>POST /api/register</h3>
+            <div class="form-row">
+                <input type="email" placeholder="Email" @bind="_regEmail" />
+                <input type="password" placeholder="Password" @bind="_regPwd" />
+                <button @onclick="DoRegister" disabled="@_busy">Register</button>
+            </div>
+        </div>
+
+        @* Login *@
+        <div class="card">
+            <h3>POST /api/login</h3>
+            <div class="form-row">
+                <input type="email" placeholder="Email" @bind="_loginEmail" />
+                <input type="password" placeholder="Password" @bind="_loginPwd" />
+                <button @onclick="DoLogin" disabled="@_busy">Login</button>
+            </div>
+        </div>
+
+        @* Forgot Password *@
+        <div class="card">
+            <h3>POST /api/forgot-password</h3>
+            <div class="form-row">
+                <input type="email" placeholder="Email" @bind="_fpEmail" />
+                <button @onclick="DoForgotPassword" disabled="@_busy">Send reset token</button>
+            </div>
+        </div>
+
+        @* Reset Password *@
+        <div class="card">
+            <h3>POST /api/reset-password</h3>
+            <div class="form-row">
+                <input type="text" placeholder="Reset token" @bind="_rpToken" />
+                <input type="password" placeholder="New password" @bind="_rpPwd" />
+                <button @onclick="DoResetPassword" disabled="@_busy">Reset</button>
+            </div>
+        </div>
+
+    </div>
+
+    @* ── curl examples ──────────────────────────────────────────────────────── *@
+    <h2>curl examples</h2>
+    <div class="grid-2">
+
+        <div class="card">
+            <h3>Register</h3>
+            <pre><code>curl -s -X POST http://localhost:5001/api/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"alice@example.com","password":"s3cr3t"}' | jq</code></pre>
+        </div>
+
+        <div class="card">
+            <h3>Login</h3>
+            <pre><code>curl -s -X POST http://localhost:5001/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"alice@example.com","password":"s3cr3t"}' | jq</code></pre>
+        </div>
+
+        <div class="card">
+            <h3>Forgot password</h3>
+            <pre><code>curl -s -X POST http://localhost:5001/api/forgot-password \
+  -H "Content-Type: application/json" \
+  -d '{"email":"alice@example.com"}' | jq</code></pre>
+        </div>
+
+        <div class="card">
+            <h3>Reset password (use token from above)</h3>
+            <pre><code>curl -s -X POST http://localhost:5001/api/reset-password \
+  -H "Content-Type: application/json" \
+  -d '{"token":"&lt;TOKEN&gt;","newPassword":"n3wp4ss"}' | jq</code></pre>
+        </div>
+
+        <div class="card">
+            <h3>List users / sessions / tokens</h3>
+            <pre><code>curl -s http://localhost:5001/api/users | jq
+curl -s http://localhost:5001/api/sessions | jq
+curl -s http://localhost:5001/api/reset-tokens | jq</code></pre>
+        </div>
+
+    </div>
+
+</div>
+
+@code {
+    private List<User>       _users       = [];
+    private List<Session>    _sessions    = [];
+    private List<ResetToken> _resetTokens = [];
+    private int              _firingCount;
+    private ApiResult?       _lastResult;
+    private string           _lastEndpoint = "";
+    private bool             _busy;
+
+    private string _regEmail   = "", _regPwd    = "";
+    private string _loginEmail = "", _loginPwd  = "";
+    private string _fpEmail    = "";
+    private string _rpToken    = "", _rpPwd     = "";
+
+    protected override void OnInitialized()
+    {
+        ApiHost.ModelChanged += OnModelChanged;
+        RefreshState();
+    }
+
+    private void OnModelChanged()
+    {
+        _firingCount++;
+        InvokeAsync(() => { RefreshState(); StateHasChanged(); });
+    }
+
+    private void RefreshState()
+    {
+        _users       = Model.Users.Marking.ToList();
+        _sessions    = Model.Sessions.Marking.ToList();
+        _resetTokens = Model.ResetTokens.Marking.ToList();
+    }
+
+    // ── Form handlers ─────────────────────────────────────────────────────────
+
+    private async Task DoRegister()
+    {
+        _busy = true;
+        var result = await CallApi("/api/register",
+            new RegisterRequest(_regEmail, _regPwd));
+        _lastEndpoint = "POST /api/register";
+        _lastResult   = result;
+        _busy = false;
+    }
+
+    private async Task DoLogin()
+    {
+        _busy = true;
+        var result = await CallApi("/api/login",
+            new LoginRequest(_loginEmail, _loginPwd));
+        _lastEndpoint = "POST /api/login";
+        _lastResult   = result;
+        _busy = false;
+    }
+
+    private async Task DoForgotPassword()
+    {
+        _busy = true;
+        var result = await CallApi("/api/forgot-password",
+            new ForgotPasswordRequest(_fpEmail));
+        _lastEndpoint = "POST /api/forgot-password";
+        _lastResult   = result;
+        _busy = false;
+    }
+
+    private async Task DoResetPassword()
+    {
+        _busy = true;
+        var result = await CallApi("/api/reset-password",
+            new ResetPasswordRequest(_rpToken, _rpPwd));
+        _lastEndpoint = "POST /api/reset-password";
+        _lastResult   = result;
+        _busy = false;
+    }
+
+    // ── HTTP helper ───────────────────────────────────────────────────────────
+
+    private static readonly HttpClient _http = new();
+
+    private static async Task<ApiResult> CallApi<T>(string path, T body)
+    {
+        try
+        {
+            var res = await _http.PostAsJsonAsync($"http://localhost:5001{path}", body);
+            var result = await res.Content.ReadFromJsonAsync<ApiResult>();
+            return result ?? new ApiResult(false, "Empty response");
+        }
+        catch (Exception ex)
+        {
+            return new ApiResult(false, ex.Message);
+        }
+    }
+
+    public void Dispose() => ApiHost.ModelChanged -= OnModelChanged;
+}
