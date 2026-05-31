@@ -88,18 +88,29 @@ internal sealed class TimedVarInputArc<T> : IInputArc where T : notnull
         var marking = (Multiset<Timed<T>>)available;
         var clock   = _getClock();
 
+        // If the value variable is already bound by an earlier arc, unify: only
+        // tokens carrying that value are candidates, and the value var's binding
+        // is owned by the earlier arc (we only bind/unbind the internal timed var).
+        var valueAlreadyBound = _valueVar.IsBound;
+
         foreach (var token in marking.DistinctItems())
         {
-            if (token.ReadyAt <= clock && marking.Count(token) >= _count)
-            {
-                var t        = token; // capture for closure
-                var consumed = Multiset.Repeat(t, _count);
-                yield return (
-                    marking - consumed,
-                    () => { _timedVar.Bind(t); _valueVar.Bind(t.Value); },
-                    () => { _timedVar.Unbind(); _valueVar.Unbind(); }
-                );
-            }
+            if (token.ReadyAt > clock || marking.Count(token) < _count)
+                continue;
+            if (valueAlreadyBound && !EqualityComparer<T>.Default.Equals(token.Value, _valueVar.Val))
+                continue;
+
+            var t        = token; // capture for closure
+            var consumed = Multiset.Repeat(t, _count);
+            yield return (
+                marking - consumed,
+                valueAlreadyBound
+                    ? () => _timedVar.Bind(t)
+                    : () => { _timedVar.Bind(t); _valueVar.Bind(t.Value); },
+                valueAlreadyBound
+                    ? () => _timedVar.Unbind()
+                    : () => { _timedVar.Unbind(); _valueVar.Unbind(); }
+            );
         }
     }
 

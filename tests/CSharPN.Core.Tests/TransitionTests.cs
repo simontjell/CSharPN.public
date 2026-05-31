@@ -204,4 +204,109 @@ public class TransitionTests
                 .Build();
         }
     }
+
+    class Variables : CpnModel
+    {
+        public readonly Place<int> Input1;
+        public readonly Place<int> Input2;
+        public readonly Place<int> Output;
+
+        public Variables()
+        {
+            Input1 = AddPlace("Input1", Multiset.Of(1, 2, 3));
+            Input2 = AddPlace("Input2", Multiset.Of(1, 2, 3));
+            Output = AddPlace<int>("Output");
+
+            // Variables
+            var a = new Var<int>("a");
+
+            Add = AddTransition("Add")
+                .Input(Input1, a)
+                .Input(Input2, a)
+                .Output(Output, () => a + a)
+                .Build();
+
+        }
+
+        public Transition Add { get; }
+    }
+
+    [Fact]
+    public void Single_variable_is_bound()
+    {
+        var net = new Variables();
+        var bindings = net.Add.GetEnabledBindings();
+        bindings.Count.Should().Be(3);
+    }
+
+    class Variables2 : CpnModel
+    {
+        public readonly Place<(int, int)> Input1;
+        public readonly Place<(int, int)> Input2;
+        public readonly Place<int> Output;
+
+        public Variables2()
+        {
+            Input1 = AddPlace("Input1", Multiset.Of((1, 2)));
+            Input2 = AddPlace("Input2", Multiset.Of((2, 1)));
+            Output = AddPlace<int>("Output");
+
+            // Variables
+            var a = new Var<(int, int)>("a");
+            var b = new Var<(int, int)>("b");
+
+            Add = AddTransition("Add")
+                .Input(Input1, a)
+                .Input(Input2, b)
+                .Output(Output, () => a.Val.Item1 + b.Val.Item1)
+                .Guard(() => a.Val.Item1 == b.Val.Item2)
+                .Build();
+
+        }
+
+        public Transition Add { get; }
+    }
+
+    [Fact]
+    public void Complex_variable_is_bound()
+    {
+        var net = new Variables2();
+        var bindings = net.Add.GetEnabledBindings();
+        bindings.Count.Should().Be(1);
+    }
+
+    class Variables3 : CpnModel
+    {
+        public record Value(int A, int B);
+        public readonly Place<Value> Input1;
+        public readonly Place<Value> Input2;
+        public readonly Place<int> Output;
+
+        public Variables3()
+        {
+            Input1 = AddPlace("Input1", Multiset.Of(new Value(1, 2)));
+            Input2 = AddPlace("Input2", Multiset.Of(new Value(2, 1)));
+            Output = AddPlace<int>("Output");
+
+            // Variables
+            var a = new Var<Value>("a");
+
+            Add = AddTransition("Add")
+                .Input(Input1, a)
+                .Input(Input2, () => new Value(a.Val.B, a.Val.A))    // This can depend on the previously bound variable a
+                .Output(Output, () => a.Val.A + a.Val.B)
+                .Build();
+
+        }
+
+        public Transition Add { get; }
+    }
+
+    [Fact]
+    public void Declaration_order_makes_expression_binding_work()
+    {
+        var net = new Variables3();
+        var bindings = net.Add.GetEnabledBindings();
+        bindings.Count.Should().Be(1);
+    }
 }

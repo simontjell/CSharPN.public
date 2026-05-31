@@ -83,6 +83,18 @@ internal sealed class VarInputArc<T> : IInputArc where T : notnull, IEquatable<T
     public IEnumerable<(object, Action, Action)> EnumerateCandidates(object available)
     {
         var marking = (Multiset<T>)available;
+
+        if (_var.IsBound)
+        {
+            // Variable already bound by an earlier arc → unification: the only
+            // candidate is the matching token, and bind/unbind are no-ops so the
+            // earlier arc retains ownership of the binding.
+            var bound = _var.Val;
+            if (marking.Count(bound) >= _count)
+                yield return (marking - Multiset.Repeat(bound, _count), () => { }, () => { });
+            yield break;
+        }
+
         foreach (var token in marking.DistinctItems())
         {
             if (marking.Count(token) >= _count)

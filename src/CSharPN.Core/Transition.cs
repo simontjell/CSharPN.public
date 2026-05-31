@@ -252,6 +252,12 @@ public sealed class TransitionBuilder
         return this;
     }
 
+    public TransitionBuilder Input<T>(Place<T> place, Func<T> expr) where T : notnull, IEquatable<T>
+    {
+        Input(place, () => Multiset.Of<T>(expr()));
+        return this;
+    }
+
     // ── Timed input arcs ──────────────────────────────────────────────────────
 
     /// <summary>
