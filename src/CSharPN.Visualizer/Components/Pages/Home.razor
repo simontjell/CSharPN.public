@@ -161,9 +161,9 @@
                                 inscrip)
                         }
                     }
-                    else if (arc.Waypoints.Count == 0 || HasDragOverride(arc))
+                    else
                     {
-                        // Straight arc (no layout or user waypoints)
+                        // Straight arc — layout waypoints intentionally ignored until we have better routing
                         var (x1, y1, bx, by) = ArcLine(arc);
                         var straightD = BentArcPath(x1, y1, bx, by, []);
                         <path data-arc-path="@arcPathKey"
@@ -176,25 +176,6 @@
                         @if (inscrip != "")
                         {
                             var (ix, iy) = ArcInscriptionPos(x1, y1, bx, by, null);
-                            @SvgTextAttr("arc-inscription",
-                                $"x=\"{Fmt(ix)}\" y=\"{Fmt(iy)}\" text-anchor=\"middle\" dominant-baseline=\"central\"",
-                                inscrip)
-                        }
-                    }
-                    else
-                    {
-                        // Layout waypoints — render as polyline (orthogonal segments)
-                        var d = BentArcPath(epX1, epY1, epBX, epBY, arc.Waypoints.Select(w => (w.X, w.Y)).ToList());
-                        <path data-arc-path="@arcPathKey"
-                              data-arc-sx="@Fmt(epX1)" data-arc-sy="@Fmt(epY1)"
-                              data-arc-ex="@Fmt(epBX)" data-arc-ey="@Fmt(epBY)"
-                              d="@d" class="@cls" marker-end="@marker" />
-                        <path d="@d" class="arc-hit" pointer-events="all"
-                              data-arc-from="@arc.FromId" data-arc-to="@arc.ToId"
-                              @onclick="() => OnArcClick(arc.FromId, arc.ToId)" />
-                        @if (inscrip != "")
-                        {
-                            var (ix, iy) = ArcInscriptionPos(epX1, epY1, epBX, epBY, arc.Waypoints);
                             @SvgTextAttr("arc-inscription",
                                 $"x=\"{Fmt(ix)}\" y=\"{Fmt(iy)}\" text-anchor=\"middle\" dominant-baseline=\"central\"",
                                 inscrip)

@@ -40,7 +40,10 @@ public sealed class CpnRoslynCompiler : ICpnCompiler
         Add(typeof(object).Assembly);                                      // System.Private.CoreLib
         Add(typeof(Enumerable).Assembly);                                  // System.Linq
         Add(typeof(Console).Assembly);                                     // System.Console
-        Add(typeof(System.Linq.Expressions.Expression).Assembly);         // System.Linq.Expressions
+        Add(typeof(System.Linq.Expressions.Expression).Assembly);          // System.Linq.Expressions
+        Add(typeof(System.Security.Cryptography.SHA256).Assembly);         // System.Security.Cryptography
+        Add(typeof(System.Text.Encoding).Assembly);                        // System.Text.Encoding
+        Add(typeof(System.Runtime.CompilerServices.RuntimeHelpers).Assembly); // System.Runtime
 
         foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             Add(asm);
