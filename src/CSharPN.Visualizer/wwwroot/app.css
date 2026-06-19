@@ -341,6 +341,14 @@ html, body {
     letter-spacing: 0.4px;
 }
 
+/* Movable labels (arc inscriptions, guards, type/init annotations) — overrides the
+   pointer-events:none on the base label classes so they can be grabbed and dragged.
+   Must follow those rules to win the specificity tie. */
+.label-draggable {
+    pointer-events: all;
+    cursor: move;
+}
+
 /* Green token-count badge circle – at right edge of ellipse */
 .token-badge {
     fill: #228b22;

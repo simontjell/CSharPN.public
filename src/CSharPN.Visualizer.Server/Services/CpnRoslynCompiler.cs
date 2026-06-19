@@ -51,6 +51,20 @@ public sealed class CpnRoslynCompiler : ICpnCompiler
         return refs;
     }
 
+    // Implicit usings (mirrors the .NET SDK's ImplicitUsings set) so user models
+    // can use Guid, List<>, LINQ, etc. without restating boilerplate usings.
+    // Applied as global usings via a separate syntax tree in every compilation.
+    private static readonly SyntaxTree _implicitUsings = CSharpSyntaxTree.ParseText(
+        """
+        global using System;
+        global using System.Collections.Generic;
+        global using System.IO;
+        global using System.Linq;
+        global using System.Text;
+        global using System.Threading;
+        global using System.Threading.Tasks;
+        """);
+
     public CompileResult Compile(string source)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
@@ -62,7 +76,7 @@ public sealed class CpnRoslynCompiler : ICpnCompiler
 
         var compilation = CSharpCompilation.Create(
             assemblyName: $"UserModel_{Guid.NewGuid():N}",
-            syntaxTrees: [syntaxTree],
+            syntaxTrees: [_implicitUsings, syntaxTree],
             references: _refs,
             options: options);
 

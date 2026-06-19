@@ -265,6 +265,31 @@ public sealed class SimulationService : IAsyncDisposable
         public double? X { get; set; }
         public double? Y { get; set; }
         public bool? ShowMarking { get; set; }
+
+        /// <summary>
+        /// User drag offsets for movable labels attached to this entity, keyed by
+        /// label kind (e.g. "inscription", "guard", "type", "init"). For arcs the
+        /// owning entity id is "fromId|toId".
+        /// </summary>
+        public Dictionary<string, LabelOffset>? Labels { get; set; }
+
+        /// <summary>
+        /// User-placed arc waypoints (bends). Only set for arc entries, whose id is
+        /// "fromId|toId".
+        /// </summary>
+        public List<LayoutPoint>? Bends { get; set; }
+    }
+
+    public sealed class LabelOffset
+    {
+        public double Dx { get; set; }
+        public double Dy { get; set; }
+    }
+
+    public sealed class LayoutPoint
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
     }
 
     private NodeLayout EnsureNode(string nodeId)
@@ -306,7 +331,7 @@ public sealed class SimulationService : IAsyncDisposable
     {
         var pageKey = CurrentPage ?? "";
         if (_layoutData.TryGetValue(pageKey, out var page))
-            foreach (var node in page.Values) { node.X = null; node.Y = null; }
+            foreach (var node in page.Values) { node.X = null; node.Y = null; node.Bends = null; }
         PersistLayout();
     }
 
@@ -327,6 +352,58 @@ public sealed class SimulationService : IAsyncDisposable
         if (!_layoutData.TryGetValue(pageKey, out var page)) return [];
         return page.Where(kv => kv.Value.ShowMarking == true)
                    .Select(kv => kv.Key).ToHashSet();
+    }
+
+    /// <summary>Record a movable-label drag offset and persist it.</summary>
+    public void SaveLabelOffset(string entityId, string kind, double dx, double dy)
+    {
+        var node = EnsureNode(entityId);
+        node.Labels ??= [];
+        if (Math.Abs(dx) < 0.05 && Math.Abs(dy) < 0.05)
+            node.Labels.Remove(kind);                 // back at default → don't persist
+        else
+            node.Labels[kind] = new LabelOffset { Dx = Math.Round(dx, 1), Dy = Math.Round(dy, 1) };
+        if (node.Labels.Count == 0) node.Labels = null;
+        PersistLayout();
+    }
+
+    /// <summary>Returns label offsets for the current page, keyed by (entityId, kind).</summary>
+    public Dictionary<(string Id, string Kind), (double Dx, double Dy)> GetCurrentLabelOffsets()
+    {
+        var result = new Dictionary<(string, string), (double, double)>();
+        var pageKey = CurrentPage ?? "";
+        if (!_layoutData.TryGetValue(pageKey, out var page)) return result;
+        foreach (var (id, n) in page)
+            if (n.Labels != null)
+                foreach (var (kind, off) in n.Labels)
+                    result[(id, kind)] = (off.Dx, off.Dy);
+        return result;
+    }
+
+    /// <summary>Record user-placed arc waypoints (bends) and persist them.</summary>
+    public void SaveArcBends(string fromId, string toId, IReadOnlyList<(double X, double Y)> bends)
+    {
+        var node = EnsureNode($"{fromId}|{toId}");
+        node.Bends = bends.Count == 0
+            ? null
+            : bends.Select(b => new LayoutPoint { X = Math.Round(b.X, 1), Y = Math.Round(b.Y, 1) }).ToList();
+        PersistLayout();
+    }
+
+    /// <summary>Returns user-placed arc bends for the current page, keyed by (fromId, toId).</summary>
+    public Dictionary<(string From, string To), List<(double X, double Y)>> GetCurrentArcBends()
+    {
+        var result = new Dictionary<(string, string), List<(double X, double Y)>>();
+        var pageKey = CurrentPage ?? "";
+        if (!_layoutData.TryGetValue(pageKey, out var page)) return result;
+        foreach (var (id, n) in page)
+        {
+            if (n.Bends is not { Count: > 0 }) continue;
+            var sep = id.IndexOf('|');
+            if (sep <= 0 || sep >= id.Length - 1) continue;
+            result[(id[..sep], id[(sep + 1)..])] = n.Bends.Select(p => (p.X, p.Y)).ToList();
+        }
+        return result;
     }
 
     /// <summary>Load layout data from file (called on model load).</summary>

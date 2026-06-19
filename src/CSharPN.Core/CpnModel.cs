@@ -92,10 +92,24 @@ public abstract class CpnModel
     /// <summary>Creates and registers a new place with an optional initial marking.</summary>
     protected Place<T> AddPlace<T>(string name, Multiset<T>? initial = null) where T : notnull, IEquatable<T>
     {
-        var place = new Place<T>(name, initial);
+        var place = new Place<T>(name ?? Pluralize<T>(), initial);
         _places.Add(place);
         return place;
     }
+
+    protected Place<T> AddPlace<T>(T initial) where T : notnull, IEquatable<T>
+        => AddPlace<T>(Multiset.Of(initial));
+
+    protected Place<T> AddPlace<T>(string name, T initial) where T : notnull, IEquatable<T>
+        => AddPlace<T>(name, Multiset.Of(initial));
+    protected Place<T> AddPlace<T>(string name) where T : notnull, IEquatable<T>
+        => AddPlace<T>(name, null);
+
+    protected Place<T> AddPlace<T>(Multiset<T>? initial = null) where T : notnull, IEquatable<T>
+        => AddPlace<T>(Pluralize<T>(), initial);
+
+    private static string Pluralize<T>()
+        => typeof(T).Name + 's'; // TODO: Make more sophisticated...
 
     /// <summary>
     /// Starts building a new transition. Call <see cref="TransitionBuilder.Build"/> to
