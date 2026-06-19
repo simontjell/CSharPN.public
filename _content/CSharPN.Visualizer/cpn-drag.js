@@ -203,6 +203,7 @@ export function initDrag(dotNetRef, svgId) {
     let nodeDrag     = null;   // { g, nodeId, offX, offY, stickyArcs }
     let arcDrag      = null;   // { fromId, toId, wpIndex, sx, sy, ex, ey, waypoints }
     let canvasDrag   = null;   // { startClientX, startClientY, startVBX, startVBY }
+    let labelDrag    = null;   // { el, id, kind, gx, gy, bx, by, offX, offY }
     let nodeMoved    = false;  // true once the node actually moved — suppresses the ensuing click
     let wheelTimer   = null;
     // stickyArc entries: { fromId, toId, isFrom, wps, sx, sy, ex, ey, modified }
@@ -219,6 +220,29 @@ export function initDrag(dotNetRef, svgId) {
     const onDown = e => {
         if (e.button !== 0) return;
         const pt = svgPt(e);
+
+        // Movable labels take top priority — they sit above nodes/arcs.
+        const labelEl = e.target.closest('[data-label-id]');
+        if (labelEl) {
+            e.preventDefault(); e.stopPropagation();
+            // Labels inside a node <g> use that group's translate as their origin;
+            // arc inscriptions live in the root coordinate system (no group).
+            const groupEl = labelEl.closest('[data-node-id]');
+            const [gx, gy] = groupEl ? parseTranslate(groupEl) : [0, 0];
+            const lx = parseFloat(labelEl.getAttribute('x'));
+            const ly = parseFloat(labelEl.getAttribute('y'));
+            labelDrag = {
+                el:   labelEl,
+                id:   labelEl.dataset.labelId,
+                kind: labelEl.dataset.labelKind,
+                gx, gy,
+                bx:   parseFloat(labelEl.dataset.labelBx),
+                by:   parseFloat(labelEl.dataset.labelBy),
+                offX: pt.x - (gx + lx),
+                offY: pt.y - (gy + ly),
+            };
+            return;
+        }
 
         // Node drag takes priority (nodes sit on top visually).
         const g = e.target.closest('[data-node-id]');
@@ -283,6 +307,13 @@ export function initDrag(dotNetRef, svgId) {
     // ── mousemove ──────────────────────────────────────────────────────────
 
     const onMove = e => {
+        if (labelDrag) {
+            e.preventDefault();
+            const pt = svgPt(e);
+            labelDrag.el.setAttribute('x', pt.x - labelDrag.offX - labelDrag.gx);
+            labelDrag.el.setAttribute('y', pt.y - labelDrag.offY - labelDrag.gy);
+            return;
+        }
         if (canvasDrag) {
             e.preventDefault();
             const vb = svg.viewBox.baseVal;
@@ -336,6 +367,15 @@ export function initDrag(dotNetRef, svgId) {
     // ── mouseup ────────────────────────────────────────────────────────────
 
     const onUp = e => {
+        if (labelDrag) {
+            const lx = parseFloat(labelDrag.el.getAttribute('x'));
+            const ly = parseFloat(labelDrag.el.getAttribute('y'));
+            dotNetRef.invokeMethodAsync('UpdateLabelOffset',
+                labelDrag.id, labelDrag.kind,
+                lx - labelDrag.bx, ly - labelDrag.by).catch(() => {});
+            labelDrag = null;
+            return;
+        }
         if (canvasDrag) {
             const vb = svg.viewBox.baseVal;
             dotNetRef.invokeMethodAsync('UpdatePan', vb.x, vb.y).catch(() => {});
