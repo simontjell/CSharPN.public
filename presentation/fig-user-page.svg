@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="796" height="301" viewBox="152 118 796 301" xmlns="http://www.w3.org/2000/svg" style="display: block;"><!--!--><style>
+        .arrowhead { fill: #5a3e28; }
+        .arrowhead-active { fill: #1a60c0; }
+        .arc { fill: none; stroke: #5a3e28; stroke-width: 1.6; }
+        .arc-active { stroke: #1a60c0; stroke-width: 2.2; }
+        .arc-inscription { font: 11px 'Consolas','Menlo',monospace; fill: #333; }
+        .place { fill: #ffffff; stroke: #5a3e28; stroke-width: 1.8; }
+        .place.has-tokens { fill: #f0f8ff; }
+        .place.place-active { stroke: #1a60c0; stroke-width: 2.4; }
+        .place-name-inner { font: bold 12px 'Consolas','Menlo',monospace; fill: #333; text-anchor: middle; dominant-baseline: central; }
+        .place-init-mark { font: italic 10px 'Consolas','Menlo',monospace; fill: #888; text-anchor: middle; }
+        .place-type { font: 10px 'Consolas','Menlo',monospace; fill: #666; }
+        .trans { fill: #e8e4dc; stroke: #5a3e28; stroke-width: 1.8; }
+        .trans.trans-enabled { fill: #e0ffe0; stroke: #228b22; stroke-width: 2.4; }
+        .trans-name-inner { font: bold 11px 'Consolas','Menlo',monospace; fill: #333; text-anchor: middle; dominant-baseline: central; }
+        .guard-label { font: italic 10px 'Consolas','Menlo',monospace; fill: #c44; text-anchor: middle; dominant-baseline: central; }
+        .token-badge { fill: #2ecc71; stroke: white; stroke-width: 1.5; }
+        .token-badge.badge-empty { fill: #ccc; stroke: #aaa; }
+        .badge-count { font: bold 11px sans-serif; fill: white; text-anchor: middle; dominant-baseline: central; }
+        .marking-box { fill: #fffacd; stroke: #8b6914; stroke-width: 1; opacity: 0.95; }
+        .marking-text { font: 11px 'Consolas','Menlo',monospace; fill: #333; }
+        .port-tag-box { fill: #d0e4f7; stroke: #2a5a8c; stroke-width: 1.2; }
+        .port-tag-text { font: bold 10px 'Consolas','Menlo',monospace; fill: #2a5a8c; text-anchor: middle; dominant-baseline: central; }
+        .page-group-rect { fill: none; stroke-width: 1.5; stroke-dasharray: 8 4; opacity: 0.55; }
+        .page-group-label { font: italic 11px 'Consolas','Menlo',monospace; opacity: 0.75; }
+    </style><rect width="796" height="301" fill="white" x="152" y="118"/><defs><marker id="ah" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" class="arrowhead"/></marker>
+                    <marker id="ah-active" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" class="arrowhead arrowhead-active"/></marker>
+                    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3" result="blur"/>
+                        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><rect x="288.5" y="194.0" width="370.7" height="210.0" class="page-group-rect" style="stroke: #3a78c9" rx="10"/><!--!--><text class="page-group-label" x="298.5" y="212.0" style="fill: #3a78c9">User</text><path d="M 270.0 344.8 L 434.8 348.2" class="arc " marker-end="url(#ah)"/><!--!--><text class="arc-inscription" x="352.1" y="358.5" text-anchor="middle" dominant-baseline="central">u</text><path d="M 514.8 343.6 L 564.0 336.9" class="arc " marker-end="url(#ah)"/><!--!--><text class="arc-inscription" x="541.0" y="352.1" text-anchor="middle" dominant-baseline="central">u</text><path d="M 476.1 329.0 L 485.8 184.0" class="arc " marker-end="url(#ah)"/><!--!--><text class="arc-inscription" x="493.0" y="257.3" text-anchor="middle" dominant-baseline="central">AuthReq</text><path d="M 692.0 275.6 L 644.2 263.2" class="arc arc-active" marker-end="url(#ah-active)"/><!--!--><text class="arc-inscription" x="671.1" y="257.8" text-anchor="middle" dominant-baseline="central">c</text><path d="M 602.1 306.8 L 603.4 272.8" class="arc arc-active" marker-end="url(#ah-active)"/><!--!--><text class="arc-inscription" x="614.8" y="290.3" text-anchor="middle" dominant-baseline="central">u</text><path d="M 644.2 233.8 L 700.7 206.9" class="arc arc-active" marker-end="url(#ah-active)"/><path d="M 342.4 183.0 L 343.2 229.0" class="arc " marker-end="url(#ah)"/><!--!--><text class="arc-inscription" x="330.8" y="206.2" text-anchor="middle" dominant-baseline="central">se</text><path d="M 255.8 177.5 L 319.0 229.0" class="arc " marker-end="url(#ah)"/><!--!--><text class="arc-inscription" x="279.8" y="212.5" text-anchor="middle" dominant-baseline="central">se2</text><path d="M 320.0 269.0 L 255.2 324.2" class="arc " marker-end="url(#ah)"/><!--!--><text class="arc-inscription" x="279.8" y="287.5" text-anchor="middle" dominant-baseline="central">se.User</text><g transform="translate(232.0,344.0)" class="node-group" data-node-id="Idle" data-node-shape="place" data-node-rx="38.0" data-node-ry="25.0" style=""><!--!--><text class="place-init-mark" x="0" y="-42" text-anchor="middle">Alice + Bob + Carol</text><ellipse rx="38" ry="25" class="place   "/><!--!-->
+
+                        <!--!--><text class="place-name-inner" x="0" y="0" text-anchor="middle" dominant-baseline="central">Idle</text><circle cx="38" cy="0" r="12" class="token-badge badge-empty" style="cursor: pointer; pointer-events: all"/><!--!-->
+                        <!--!--><text class="badge-count" x="38" y="0" dominant-baseline="central" style="pointer-events:none">0</text><!--!-->
+
+                        <!--!--><text class="place-type" y="38">User</text><rect x="-65.0" y="-10" width="31.0" height="20" class="port-tag-box" rx="3"/><!--!--><text class="port-tag-text" x="-49.0" y="0" text-anchor="middle" dominant-baseline="central">I/O</text></g><g transform="translate(487.5,159.0)" class="node-group" data-node-id="AuthReq" data-node-shape="place" data-node-rx="38.0" data-node-ry="25.0" style=""><ellipse rx="38" ry="25" class="place has-tokens place-active "/><!--!-->
+
+                        <!--!--><text class="place-name-inner" x="0" y="0" text-anchor="middle" dominant-baseline="central">AuthReq</text><rect x="48" y="-13" width="160.0" height="26" class="marking-box" rx="3"/><!--!--><text class="marking-text" x="52" y="0" dominant-baseline="middle">Code(Bob) + Code(Carol…</text><circle cx="38" cy="0" r="12" class="token-badge " style="cursor: pointer; pointer-events: all"/><!--!-->
+                        <!--!--><text class="badge-count" x="38" y="0" dominant-baseline="central" style="pointer-events:none">2</text><!--!-->
+
+                        <!--!--><text class="place-type" y="38">AuthCode</text><rect x="-65.0" y="-10" width="31.0" height="20" class="port-tag-box" rx="3"/><!--!--><text class="port-tag-text" x="-49.0" y="0" text-anchor="middle" dominant-baseline="central">Out</text></g><g transform="translate(727.3,284.8)" class="node-group" data-node-id="AuthResp" data-node-shape="place" data-node-rx="38.0" data-node-ry="25.0" style=""><ellipse rx="38" ry="25" class="place has-tokens place-active "/><!--!-->
+
+                        <!--!--><text class="place-name-inner" x="0" y="0" text-anchor="middle" dominant-baseline="central">AuthResp</text><rect x="48" y="-13" width="157.0" height="26" class="marking-box" rx="3"/><!--!--><text class="marking-text" x="52" y="0" dominant-baseline="middle">Code(Alice): D6B5915C</text><circle cx="38" cy="0" r="12" class="token-badge " style="cursor: pointer; pointer-events: all"/><!--!-->
+                        <!--!--><text class="badge-count" x="38" y="0" dominant-baseline="central" style="pointer-events:none">1</text><!--!-->
+
+                        <!--!--><text class="place-type" y="38">AuthCode</text><rect x="-58.0" y="-10" width="24.0" height="20" class="port-tag-box" rx="3"/><!--!--><text class="port-tag-text" x="-46.0" y="0" text-anchor="middle" dominant-baseline="central">In</text></g><g transform="translate(731.5,192.2)" class="node-group" data-node-id="Exchanging" data-node-shape="place" data-node-rx="38.0" data-node-ry="25.0" style=""><ellipse rx="38" ry="25" class="place   "/><!--!-->
+
+                        <!--!--><text class="place-name-inner" x="0" y="0" text-anchor="middle" dominant-baseline="central">Exchanging</text><circle cx="38" cy="0" r="12" class="token-badge badge-empty" style="cursor: pointer; pointer-events: all"/><!--!-->
+                        <!--!--><text class="badge-count" x="38" y="0" dominant-baseline="central" style="pointer-events:none">0</text><!--!-->
+
+                        <!--!--><text class="place-type" y="38">Timed&lt;AuthCode&gt;</text><rect x="-65.0" y="-10" width="31.0" height="20" class="port-tag-box" rx="3"/><!--!--><text class="port-tag-text" x="-49.0" y="0" text-anchor="middle" dominant-baseline="central">Out</text></g><g transform="translate(232.0,158.0)" class="node-group" data-node-id="LoggedIn" data-node-shape="place" data-node-rx="38.0" data-node-ry="25.0" style=""><ellipse rx="38" ry="25" class="place   "/><!--!-->
+
+                        <!--!--><text class="place-name-inner" x="0" y="0" text-anchor="middle" dominant-baseline="central">LoggedIn</text><circle cx="38" cy="0" r="12" class="token-badge badge-empty" style="cursor: pointer; pointer-events: all"/><!--!-->
+                        <!--!--><text class="badge-count" x="38" y="0" dominant-baseline="central" style="pointer-events:none">0</text><!--!-->
+
+                        <!--!--><text class="place-type" y="38">Session</text><rect x="-65.0" y="-10" width="31.0" height="20" class="port-tag-box" rx="3"/><!--!--><text class="port-tag-text" x="-49.0" y="0" text-anchor="middle" dominant-baseline="central">I/O</text></g><g transform="translate(342.0,158.0)" class="node-group" data-node-id="Browsing" data-node-shape="place" data-node-rx="38.0" data-node-ry="25.0" style=""><ellipse rx="38" ry="25" class="place   "/><!--!-->
+
+                        <!--!--><text class="place-name-inner" x="0" y="0" text-anchor="middle" dominant-baseline="central">Browsing</text><circle cx="38" cy="0" r="12" class="token-badge badge-empty" style="cursor: pointer; pointer-events: all"/><!--!-->
+                        <!--!--><text class="badge-count" x="38" y="0" dominant-baseline="central" style="pointer-events:none">0</text><!--!-->
+
+                        <!--!--><text class="place-type" y="38">Timed&lt;Session&gt;</text><rect x="-58.0" y="-10" width="24.0" height="20" class="port-tag-box" rx="3"/><!--!--><text class="port-tag-text" x="-46.0" y="0" text-anchor="middle" dominant-baseline="central">In</text></g><g transform="translate(601.2,331.8)" class="node-group" data-node-id="Waiting" data-node-shape="place" data-node-rx="38.0" data-node-ry="25.0"><ellipse rx="38" ry="25" class="place has-tokens place-active "/><!--!-->
+
+                        <!--!--><text class="place-name-inner" x="0" y="0" text-anchor="middle" dominant-baseline="central">Waiting</text><rect x="48" y="-13" width="143.0" height="26" class="marking-box" rx="3"/><!--!--><text class="marking-text" x="52" y="0" dominant-baseline="middle">Alice + Bob + Carol</text><circle cx="38" cy="0" r="12" class="token-badge " style="cursor: pointer; pointer-events: all"/><!--!-->
+                        <!--!--><text class="badge-count" x="38" y="0" dominant-baseline="central" style="pointer-events:none">3</text><!--!-->
+
+                        <!--!--><text class="place-type" y="38">User</text></g><g transform="translate(474.8,349.0)" class="node-group" data-node-id="Login" data-node-shape="transition" data-node-w="80.0" data-node-h="40.0" style=""><!--!-->
+
+                        <rect x="-40" y="-20" width="80" height="40" class="trans  " rx="3"/><!--!-->
+
+                        <!--!--><text class="trans-name-inner" x="0" y="0" text-anchor="middle" dominant-baseline="central">Login</text></g><g transform="translate(604.2,252.8)" class="node-group" data-node-id="ReceiveCode" data-node-shape="transition" data-node-w="80.0" data-node-h="40.0" style="cursor: pointer"><!--!-->
+
+                        <rect x="-40" y="-20" width="80" height="40" class="trans trans-enabled " rx="3"/><!--!-->
+
+                        <!--!--><text class="trans-name-inner" x="0" y="-7" text-anchor="middle" dominant-baseline="central">ReceiveCode</text><!--!--><text class="guard-label" x="0" y="8" text-anchor="middle" dominant-baseline="central">[G]</text></g><g transform="translate(343.5,249.0)" class="node-group" data-node-id="Logout" data-node-shape="transition" data-node-w="80.0" data-node-h="40.0" style="cursor: default"><!--!-->
+
+                        <rect x="-40" y="-20" width="80" height="40" class="trans  " rx="3"/><!--!-->
+
+                        <!--!--><text class="trans-name-inner" x="0" y="-7" text-anchor="middle" dominant-baseline="central">Logout</text><!--!--><text class="guard-label" x="0" y="8" text-anchor="middle" dominant-baseline="central">[G]</text></g></svg>
