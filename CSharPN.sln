@@ -23,12 +23,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CSharPN.Wasm", "src\CSharPN
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UserApi", "examples\UserApi\UserApi.csproj", "{A1B2C3D4-0010-0010-0010-000000000010}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "papers", "papers", "{BD6F3CAD-DF6F-EA90-531E-3FEAA9D381D8}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "PNSE26", "PNSE26", "{05B87C3A-C4D9-CEE5-AEFF-679B0D1304D8}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "presentation-sli", "papers\PNSE26\presentation-sli\presentation-sli.csproj", "{C02022A9-4B08-42A1-87E2-D7B0AD67385C}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -159,24 +153,8 @@ Global
 		{A1B2C3D4-0010-0010-0010-000000000010}.Release|x64.Build.0 = Release|Any CPU
 		{A1B2C3D4-0010-0010-0010-000000000010}.Release|x86.ActiveCfg = Release|Any CPU
 		{A1B2C3D4-0010-0010-0010-000000000010}.Release|x86.Build.0 = Release|Any CPU
-		{C02022A9-4B08-42A1-87E2-D7B0AD67385C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{C02022A9-4B08-42A1-87E2-D7B0AD67385C}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{C02022A9-4B08-42A1-87E2-D7B0AD67385C}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{C02022A9-4B08-42A1-87E2-D7B0AD67385C}.Debug|x64.Build.0 = Debug|Any CPU
-		{C02022A9-4B08-42A1-87E2-D7B0AD67385C}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{C02022A9-4B08-42A1-87E2-D7B0AD67385C}.Debug|x86.Build.0 = Debug|Any CPU
-		{C02022A9-4B08-42A1-87E2-D7B0AD67385C}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{C02022A9-4B08-42A1-87E2-D7B0AD67385C}.Release|Any CPU.Build.0 = Release|Any CPU
-		{C02022A9-4B08-42A1-87E2-D7B0AD67385C}.Release|x64.ActiveCfg = Release|Any CPU
-		{C02022A9-4B08-42A1-87E2-D7B0AD67385C}.Release|x64.Build.0 = Release|Any CPU
-		{C02022A9-4B08-42A1-87E2-D7B0AD67385C}.Release|x86.ActiveCfg = Release|Any CPU
-		{C02022A9-4B08-42A1-87E2-D7B0AD67385C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
-	EndGlobalSection
-	GlobalSection(NestedProjects) = preSolution
-		{05B87C3A-C4D9-CEE5-AEFF-679B0D1304D8} = {BD6F3CAD-DF6F-EA90-531E-3FEAA9D381D8}
-		{C02022A9-4B08-42A1-87E2-D7B0AD67385C} = {05B87C3A-C4D9-CEE5-AEFF-679B0D1304D8}
 	EndGlobalSection
 EndGlobal
