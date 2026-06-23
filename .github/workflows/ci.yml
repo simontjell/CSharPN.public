@@ -1,7 +1,7 @@
 name: CI
 
-# Bygger og tester CSharPN. Denne workflow synkroniseres til
-# simontjell/CSharPN.public og kører dér.
+# Build and test CSharPN. This workflow is synchronized to
+# simontjell/CSharPN.public and runs there.
 
 on:
   push:
