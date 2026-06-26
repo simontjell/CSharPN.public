@@ -10,4 +10,33 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <NoWarn>CS1591</NoWarn>
   </PropertyGroup>
+
+  <!-- NuGet-pakkemetadata. Selve versionen sættes ved pack-tid af
+       release-please-workflowet (-p:Version=...), så den er ikke hardcodet her;
+       0.0.0 er blot en fallback til lokale builds. -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>CSharPN.Core</PackageId>
+    <Version>0.0.0</Version>
+    <Authors>Simon Tjell</Authors>
+    <Company>Simon Tjell</Company>
+    <Product>CSharPN</Product>
+    <Title>CSharPN.Core</Title>
+    <Description>A code-first framework for Coloured Petri Net (CPN) modelling with C# as the inscription language. Supports untimed, timed, and hierarchical CPNs.</Description>
+    <PackageTags>petri-net;coloured-petri-net;cpn;simulation;modelling;formal-methods</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/simontjell/CSharPN.public</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/simontjell/CSharPN.public</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <!-- Indlejr PDB'en i assemblyen (debug-symboler følger med pakken uden en
+         separat .snupkg). -->
+    <DebugType>embedded</DebugType>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 </Project>

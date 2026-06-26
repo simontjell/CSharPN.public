@@ -1,5 +1,7 @@
 # CSharPN
 
+[![NuGet](https://img.shields.io/nuget/v/CSharPN.Core.svg)](https://www.nuget.org/packages/CSharPN.Core/)
+
 **A code-first framework for Coloured Petri Net modelling with C# as the inscription language.**
 
 CSharPN lets you model, simulate, and visualise [Coloured Petri Nets](https://en.wikipedia.org/wiki/Coloured_Petri_net) (CPNs) without a dedicated graphical editor or a separate inscription language. A model is an ordinary C# class: colour sets are C# types, arc expressions and guards are lambda expressions, and the whole model enjoys IntelliSense, compile-time type checking, and the full .NET ecosystem.
@@ -54,6 +56,20 @@ CSharPN supports **untimed**, **timed**, and **hierarchical** CPNs within a sing
 ## Requirements
 
 - [.NET SDK 10.0+](https://dotnet.microsoft.com/)
+
+## Install
+
+The core framework is published to [NuGet](https://www.nuget.org/packages/CSharPN.Core/):
+
+```bash
+dotnet add package CSharPN.Core
+```
+
+Packages are versioned with [Semantic Versioning](https://semver.org/) and released
+automatically from [Conventional Commits](https://www.conventionalcommits.org/) via
+[release-please](https://github.com/googleapis/release-please). Publishing uses
+nuget.org [Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing)
+(OIDC) — no API key is stored.
 
 ## Build & test
 

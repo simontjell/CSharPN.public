@@ -1,0 +1,94 @@
+name: Release Please
+
+# Semantisk versionering og NuGet-publicering for CSharPN.
+#
+# Workflowet er synkroniseret til simontjell/CSharPN.public og kører DER.
+#
+# 1. release-please læser conventional-commit-historikken på main og
+#    vedligeholder en "release PR" der bumper versionen (version.txt +
+#    .release-please-manifest.json) og opdaterer CHANGELOG.md.
+# 2. Når release-PR'en merges, opretter release-please et GitHub-release
+#    og et tag (vX.Y.Z). Det udløser publish-jobbet, som pakker
+#    CSharPN.Core og pusher .nupkg til nuget.org.
+#
+# Publiceringen bruger nuget.org Trusted Publishing (OIDC): ingen API-nøgle
+# gemmes som secret. GitHub Actions udsteder en kortlivet OIDC-token
+# (id-token: write), som NuGet/login veksler til en midlertidig API-nøgle ud
+# fra den "trusted publisher"-politik der er oprettet på nuget.org for dette
+# repo + workflow. Pakkerne lander på https://www.nuget.org/packages/CSharPN.Core
+#
+# Bemærk: semantisk versionering afhænger af at commit-beskederne på main
+# følger Conventional Commits (feat:, fix:, feat!: osv.). sync-public.yml i
+# det private repo viderefører den oprindelige commit-besked, så bumps
+# udledes korrekt.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Undgå overlappende releases.
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # kræves til OIDC / Trusted Publishing
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore src/CSharPN.Core/CSharPN.Core.csproj
+
+      - name: Pack (Release ${{ needs.release-please.outputs.version }})
+        run: |
+          dotnet pack src/CSharPN.Core/CSharPN.Core.csproj \
+            --configuration Release \
+            --no-restore \
+            -p:Version=${{ needs.release-please.outputs.version }} \
+            --output nupkgs
+
+      # Veksler GitHub OIDC-token til en midlertidig nuget.org API-nøgle ud fra
+      # den Trusted Publishing-politik der er oprettet på nuget.org. "user" er
+      # nuget.org-kontoen (Package Owner) der ejer politikken.
+      - name: NuGet login (Trusted Publishing)
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: simontjell
+
+      - name: Push til nuget.org
+        run: |
+          dotnet nuget push "nupkgs/*.nupkg" \
+            --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
