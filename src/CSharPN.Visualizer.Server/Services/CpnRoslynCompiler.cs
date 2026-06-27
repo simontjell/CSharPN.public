@@ -4,6 +4,7 @@ using CSharPN.Core;
 using CSharPN.Visualizer.Services;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace CSharPN.Visualizer.Server.Services;
 
@@ -65,9 +66,18 @@ public sealed class CpnRoslynCompiler : ICpnCompiler
         global using System.Threading.Tasks;
         """);
 
-    public CompileResult Compile(string source)
+    public CompileResult Compile(string source) => Compile([source]);
+
+    public CompileResult Compile(IReadOnlyList<string> sources)
     {
-        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        // Parse each file and drop any that use top-level statements (a driver
+        // Program.cs) — those cannot be part of the class-library compilation the
+        // model is emitted into.
+        var modelTrees = sources
+            .Select(s => CSharpSyntaxTree.ParseText(s))
+            .Where(t => t.GetRoot() is not CompilationUnitSyntax cu
+                        || !cu.Members.OfType<GlobalStatementSyntax>().Any())
+            .ToArray();
 
         var options = new CSharpCompilationOptions(
             OutputKind.DynamicallyLinkedLibrary,
@@ -76,7 +86,7 @@ public sealed class CpnRoslynCompiler : ICpnCompiler
 
         var compilation = CSharpCompilation.Create(
             assemblyName: $"UserModel_{Guid.NewGuid():N}",
-            syntaxTrees: [_implicitUsings, syntaxTree],
+            syntaxTrees: [_implicitUsings, .. modelTrees],
             references: _refs,
             options: options);
 

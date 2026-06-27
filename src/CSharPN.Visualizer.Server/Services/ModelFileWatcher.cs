@@ -93,7 +93,11 @@ public sealed class ModelFileWatcher : BackgroundService
         var dir  = Path.GetDirectoryName(_modelFile)!;
         var file = Path.GetFileName(_modelFile);
 
-        using var watcher = new FileSystemWatcher(dir, file)
+        // Watch every .cs file in the folder, not just the model file: the model may
+        // be split across files (e.g. Domain.cs + Model.cs), and editing any of them
+        // should trigger a recompile.
+        _ = file;
+        using var watcher = new FileSystemWatcher(dir, "*.cs")
         {
             NotifyFilter          = NotifyFilters.LastWrite | NotifyFilters.FileName,
             IncludeSubdirectories = false,
@@ -126,7 +130,21 @@ public sealed class ModelFileWatcher : BackgroundService
             return;
         }
 
-        var result = _compiler.Compile(source);
+        // Compile the model file together with its sibling .cs files so a model split
+        // across files (Domain.cs + Model.cs …) resolves. Driver files with top-level
+        // statements are ignored by the compiler.
+        IReadOnlyList<string> sources;
+        try
+        {
+            var dir = Path.GetDirectoryName(_modelFile)!;
+            var list = new List<string>();
+            foreach (var path in Directory.GetFiles(dir, "*.cs"))
+                list.Add(await File.ReadAllTextAsync(path, ct));
+            sources = list.Count > 0 ? list : [source];
+        }
+        catch { sources = [source]; }
+
+        var result = _compiler.Compile(sources);
 
         if (result.Model == null)
         {

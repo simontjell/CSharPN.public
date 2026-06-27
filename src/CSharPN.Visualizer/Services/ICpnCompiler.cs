@@ -20,4 +20,11 @@ public sealed record CompileResult(
 public interface ICpnCompiler
 {
     CompileResult Compile(string source);
+
+    /// <summary>
+    /// Compiles a model that may be split across several source files (e.g.
+    /// <c>Domain.cs</c> + <c>Model.cs</c>). Files using top-level statements (a driver
+    /// <c>Program.cs</c>) are ignored.
+    /// </summary>
+    CompileResult Compile(IReadOnlyList<string> sources);
 }
