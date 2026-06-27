@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/simontjell/CSharPN.public/compare/v0.2.0...v0.2.1) (2026-06-27)
+
+
+### Bug Fixes
+
+* support multi-file models ([2e51496](https://github.com/simontjell/CSharPN.public/commit/2e51496e61dc2ce448ca5bc6ec44b9611bb2728f))
+
 ## [0.2.0](https://github.com/simontjell/CSharPN.public/compare/v0.1.0...v0.2.0) (2026-06-26)
 
 
