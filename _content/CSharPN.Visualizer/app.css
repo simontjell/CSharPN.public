@@ -200,6 +200,34 @@ html, body {
     font-size: 16px;
 }
 
+.hot-error {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    z-index: 10;
+    background: #fdecea;
+    border: 1px solid #d93025;
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: #a50e0e;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.hot-error-title {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.hot-error-body {
+    margin: 0;
+    white-space: pre-wrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.4;
+}
+
 /* ── SVG elements ─────────────────────────────────────────────────────────── */
 .arrowhead { fill: var(--arc-color); }
 .arrowhead-active { fill: var(--arc-active); }
