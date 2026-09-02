@@ -519,6 +519,21 @@ public class CPN_Tools_binding_rules
     }
 
     [Fact]
+    public void Match_in_the_Simple_example_is_enabled_only_for_the_value_both_places_hold()
+    {
+        // examples/ClassicExamples/Simple.cs: x on the arcs from Input {1,2,3} and Constants {1,5,10}.
+        var net = new Simple();
+        var match = net.Transitions.Single(t => t.Name == "Match");
+        var bindings = match.GetEnabledBindings();
+        bindings.Should().ContainSingle().Which.Values["x"].Should().Be(1);
+
+        match.Fire(bindings[0]);
+        net.Input.Marking.ShouldBe(Multiset.Of(2, 3));
+        net.Constants.Marking.ShouldBe(Multiset.Of(1, 5, 10));          // the constant is put back
+        net.Results.Marking.ShouldBe(Multiset.Of(new Simple.Result(1, 1)));
+    }
+
+    [Fact]
     public void Unification_respects_the_multiplicity_demanded_on_each_arc()
     {
         // x on P (1`x) and on Q (2`x)

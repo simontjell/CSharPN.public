@@ -31,6 +31,15 @@ public class Simple : CpnModel
             .Output(Constants, () => y)
             .Build();
 
+        // The same variable on two input arcs: x must be bound to the same value on both,
+        // so Match is only enabled for values present in both Input and Constants (here 1).
+        AddTransition("Match")
+            .Input(Input, x)
+            .Input(Constants, x)
+            .Output(Results, () => new (x, x))
+            .Output(Constants, () => x)
+            .Build();
+
         AddTransition("Put back output")
             .Input(Results, r)
             .Output(Input, () => r.Val.Output)
