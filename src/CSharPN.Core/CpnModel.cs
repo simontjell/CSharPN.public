@@ -82,6 +82,14 @@ public abstract class CpnModel
     /// <summary>The model's display name (defaults to the class name).</summary>
     public string Name { get; }
 
+    /// <summary>
+    /// Lock that serialises binding enumeration and firing on this model. Variable bindings
+    /// and place markings are shared mutable state, so two drivers of one model (say an HTTP
+    /// host and an interactive visualizer) must hold this lock around each
+    /// enumerate-then-fire unit. <see cref="CpnSimulator"/> does so for its own operations.
+    /// </summary>
+    public object SyncRoot { get; } = new();
+
     protected CpnModel(string? name = null)
     {
         Name = name ?? GetType().Name;

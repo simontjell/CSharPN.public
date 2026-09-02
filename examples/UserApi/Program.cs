@@ -5,6 +5,11 @@ using UserApi;
 
 // ── Build ─────────────────────────────────────────────────────────────────────
 
+// The guard rule is enforced when each transition is built. This adds the runtime
+// backstop for the one case that check cannot see: a marking reached through a
+// method call rather than named in the guard expression itself.
+CSharPN.Core.GuardScope.Strict = true;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
@@ -13,7 +18,8 @@ builder.Services.AddRazorComponents()
 // The model IS the application state — one singleton shared across all requests.
 var model = new UserManagementModel();
 builder.Services.AddSingleton(model);
-builder.Services.AddSingleton(new CpnApiHost(model));
+builder.Services.AddSingleton(sp =>
+    new CpnApiHost(model, sp.GetRequiredService<ILogger<CpnApiHost>>()));
 
 // Visualizer services (scoped per Blazor circuit).
 builder.Services.AddScoped<SimulationService>();
@@ -39,14 +45,19 @@ host.MapPost(app, "/api/login",            model.LoginCh);
 host.MapPost(app, "/api/forgot-password",  model.ForgotCh);
 host.MapPost(app, "/api/reset-password",   model.ResetCh);
 
-host.MapGet(app, "/api/users",        model.Users);
+// Users and ResetTokens hold one collection token each, so they are flattened to rows.
+host.MapGet(app, "/api/users",        model.Users,       db => db.All);
+host.MapGet(app, "/api/reset-tokens", model.ResetTokens, db => db.All);
 host.MapGet(app, "/api/sessions",     model.Sessions);
-host.MapGet(app, "/api/reset-tokens", model.ResetTokens);
 
-// ── Hook: when API fires a transition, notify all visualizer sessions ─────────
+// ── Hook: when the engine fires transitions, notify all visualizer sessions ──
 
 var bridge = app.Services.GetRequiredService<SimSessionBridge>();
-host.ModelChanged += () => bridge.NotifyAll();
+host.ModelChanged += _ => bridge.NotifyAll();
+
+// All endpoints are mapped — the engine may now start firing.
+host.Start();
+app.Lifetime.ApplicationStopping.Register(() => host.DisposeAsync().AsTask().GetAwaiter().GetResult());
 
 // ── Blazor dashboard + visualizer ─────────────────────────────────────────────
 

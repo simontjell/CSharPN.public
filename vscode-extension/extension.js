@@ -100,6 +100,9 @@ function activate(context) {
             return;
         }
         const filePath = editor.document.fileName;
+        // The server loads the model class whose declaration contains the cursor,
+        // so a file with several models opens the one being edited.
+        const cursorLine = editor.selection.active.line + 1;
 
         // Walk up from the file to find the project root (contains scripts/serve.sh)
         const projectRoot = findProjectRoot(path.dirname(filePath));
@@ -124,7 +127,7 @@ function activate(context) {
             cancellable: false,
         }, async (progress) => {
 
-            _proc = spawn('bash', [serveScript, '--port', String(port), filePath], {
+            _proc = spawn('bash', [serveScript, '--port', String(port), '--line', String(cursorLine), filePath], {
                 cwd: projectRoot,
                 stdio: ['ignore', 'pipe', 'pipe'],
             });

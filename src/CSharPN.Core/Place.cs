@@ -38,14 +38,20 @@ public sealed class Place<T> : IPlaceInternal
     /// <summary>The marking the simulator resets to on <see cref="CpnModel.Reset"/>.</summary>
     public Multiset<T> InitialMarking { get; }
 
+    private Multiset<T> _marking;
+
     /// <summary>The current marking. Updated atomically by the simulator during transition firing.</summary>
-    public Multiset<T> Marking { get; internal set; }
+    public Multiset<T> Marking
+    {
+        get { GuardScope.RecordRead(this); return _marking; }
+        internal set => _marking = value;
+    }
 
     public Place(string name, Multiset<T>? initial = null)
     {
         Name = name;
         InitialMarking = initial ?? Multiset<T>.Empty;
-        Marking = InitialMarking;
+        _marking = InitialMarking;
     }
 
     public void Reset() => Marking = InitialMarking;

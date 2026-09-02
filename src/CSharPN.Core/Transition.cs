@@ -10,7 +10,7 @@ namespace CSharPN.Core;
 /// <c>v ∈ Var(t)</c> to a value <c>b(v) ∈ Type[v]</c> (Jensen &amp; Kristensen 2009,
 /// Definition 4.3 (4)). Together with <see cref="Transition"/> it forms a
 /// <b>binding element</b> <c>(t, b)</c> (Definition 4.3 (5)).
-/// Returned by <see cref="Transition.GetEnabledBindings"/>; passed to
+/// Returned by <see cref="Transition.GetEnabledBindings()"/>; passed to
 /// <see cref="Transition.Fire"/> to let the binding element occur.
 /// </summary>
 public sealed class BindingSnapshot : IEquatable<BindingSnapshot>
@@ -166,14 +166,23 @@ public sealed class Transition
     /// enabling rule itself, so expression arcs and the guard are evaluated under a complete
     /// binding regardless of the order in which arcs were declared.
     /// </remarks>
-    public IReadOnlyList<BindingSnapshot> GetEnabledBindings()
+    public IReadOnlyList<BindingSnapshot> GetEnabledBindings() => GetEnabledBindings(int.MaxValue);
+
+    /// <summary>
+    /// Returns at most <paramref name="max"/> enabled bindings, abandoning the search as
+    /// soon as that many have been found. Use <c>max: 1</c> to ask "is this transition
+    /// enabled, and with which binding?" without enumerating every binding.
+    /// </summary>
+    public IReadOnlyList<BindingSnapshot> GetEnabledBindings(int max)
     {
+        if (max < 1) throw new ArgumentOutOfRangeException(nameof(max), "Must be at least 1.");
         var marking = SnapshotMarking();
         var results = new List<BindingSnapshot>();
         ForEachCandidateBinding(marking, () =>
         {
             if (IsEnabledUnderCurrentBinding(marking))
                 results.Add(CaptureSnapshot());
+            return results.Count >= max;
         });
         return results;
     }
@@ -201,7 +210,18 @@ public sealed class Transition
 
     /// <summary><c>G(t)⟨b⟩</c> — the guard evaluated in the current binding (true when there is no guard).</summary>
     internal bool EvaluateGuard()
-        => _guard is null || Evaluate(_guard, "the guard");
+    {
+        if (_guard is null) return true;
+        return Evaluate(() =>
+        {
+            bool result = GuardScope.Evaluate(_guard, out var readPlace);
+            if (readPlace is not null)
+                throw new InvalidOperationException(
+                    $"Transition '{Name}': the guard read the marking of place \"{readPlace.Name}\" " +
+                    $"(through a method call, which the build-time check cannot see). {GuardRule.Requirement}");
+            return result;
+        }, "the guard");
+    }
 
     /// <summary>
     /// Checks <c>∀p: E(p,t)⟨b⟩ ≤ M(p)</c> by folding every input arc's demand over
@@ -241,7 +261,11 @@ public sealed class Transition
 
     // ── Candidate generation (binding inference) ──────────────────────────────
 
-    private void ForEachCandidateBinding(Dictionary<IPlace, object> marking, Action onCandidate)
+    /// <summary>
+    /// Calls <paramref name="onCandidate"/> once per candidate binding (with the variables
+    /// bound); the callback returns true to stop the enumeration early.
+    /// </summary>
+    private void ForEachCandidateBinding(Dictionary<IPlace, object> marking, Func<bool> onCandidate)
     {
         var remaining = new Dictionary<IPlace, object>(marking, Ref);
         EnumeratePatternArcs(0, remaining, onCandidate);
@@ -250,14 +274,12 @@ public sealed class Transition
     /// <summary>
     /// Depth-first enumeration over the pattern arcs: arc <c>i</c> proposes values for its
     /// variable from the tokens still available on its place after arcs <c>0..i-1</c>.
+    /// Returns true when the enumeration was stopped by the callback.
     /// </summary>
-    private void EnumeratePatternArcs(int i, Dictionary<IPlace, object> remaining, Action onCandidate)
+    private bool EnumeratePatternArcs(int i, Dictionary<IPlace, object> remaining, Func<bool> onCandidate)
     {
         if (i == _patternArcs.Count)
-        {
-            EnumerateFreeVariables(0, onCandidate);
-            return;
-        }
+            return EnumerateFreeVariables(0, onCandidate);
 
         var arc  = _patternArcs[i];
         var prev = remaining[arc.Place];
@@ -266,16 +288,19 @@ public sealed class Transition
         {
             bind();
             remaining[arc.Place] = updated;
+            bool stop;
             try
             {
-                EnumeratePatternArcs(i + 1, remaining, onCandidate);
+                stop = EnumeratePatternArcs(i + 1, remaining, onCandidate);
             }
             finally
             {
                 unbind();
                 remaining[arc.Place] = prev;
             }
+            if (stop) return true;
         }
+        return false;
     }
 
     /// <summary>
@@ -283,21 +308,21 @@ public sealed class Transition
     /// that occurs only on output arcs / in the guard is bound to an arbitrary value of its
     /// small colour set; Definition 4.3 (4) allows any <c>b(v) ∈ Type[v]</c>).
     /// </summary>
-    private void EnumerateFreeVariables(int j, Action onCandidate)
+    private bool EnumerateFreeVariables(int j, Func<bool> onCandidate)
     {
         if (j == _freeVariables.Count)
-        {
-            onCandidate();
-            return;
-        }
+            return onCandidate();
 
         var v = _freeVariables[j];
         foreach (var value in v.DomainObjects!)
         {
             v.BindObject(value);
-            try { EnumerateFreeVariables(j + 1, onCandidate); }
+            bool stop;
+            try { stop = EnumerateFreeVariables(j + 1, onCandidate); }
             finally { v.Unbind(); }
+            if (stop) return true;
         }
+        return false;
     }
 
     private BindingSnapshot CaptureSnapshot()
@@ -416,7 +441,7 @@ public sealed record ArcView(IPlace Place, ArcDirection Direction, string Inscri
 /// <para>
 /// A variable that occurs only in output-arc expressions or the guard (a <em>free variable</em>)
 /// is bound by enumerating its colour set. Variables referenced from expression-tree overloads
-/// (<see cref="Guard(Expression{Func{bool}})"/>, <see cref="Output{T}(Place{T}, Expression{Func{T}})"/>,
+/// (<see cref="Guard(Expression{Func{bool}}, string)"/>, <see cref="Output{T}(Place{T}, Expression{Func{T}})"/>,
 /// <see cref="Output{T}(Place{T}, Var{T}, string)"/>, …) are discovered automatically; variables used
 /// only inside plain <c>Func</c> lambdas must be declared with <see cref="Free{T}"/>.
 /// </para>
@@ -430,6 +455,7 @@ public sealed class TransitionBuilder
     private readonly List<IVar>       _referencedVars = [];   // Var(t) contributions from non-input inscriptions
     private Func<bool>? _guard;
     private string?     _guardLabel;
+    private string?     _guardProblem;
     private Func<int>?  _transitionDelay;
     private readonly Func<CpnTime> _getClock;
 
@@ -539,33 +565,26 @@ public sealed class TransitionBuilder
     // ── Guard ─────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Sets the guard from an expression tree. The display label is derived
-    /// automatically from the expression body — <c>() =&gt; p.Val == a.Val.Owner</c>
-    /// shows <c>p == a.Owner</c> (the <c>.Val</c> suffix is stripped for readability).
-    /// Variables referenced by the guard are added to <c>Var(t)</c>.
-    /// Use the <see cref="Guard(Func{bool}, string)"/> overload for a custom label
-    /// or a statement-bodied guard.
+    /// Sets the guard. The guard is an expression over the values of the transition's
+    /// variables and over constants of the net; it may not read a place, the model or any
+    /// other reference that could carry state (<see cref="GuardRule"/>) — checked by
+    /// <see cref="Build"/>. Variables it reads are added to <c>Var(t)</c>. The display label
+    /// is derived from the expression body — <c>() =&gt; p.Val == a.Val.Owner</c> shows
+    /// <c>[p == a.Owner]</c> — unless <paramref name="label"/> is given.
     /// </summary>
-    public TransitionBuilder Guard(Expression<Func<bool>> guard)
+    /// <remarks>
+    /// The guard is taken as an expression tree rather than a delegate so that it can be
+    /// inspected; a condition that needs statements belongs in a static method called from
+    /// the expression. <see cref="GuardScope.Strict"/> catches marking reads made inside
+    /// such a method at runtime.
+    /// </remarks>
+    public TransitionBuilder Guard(Expression<Func<bool>> guard, string? label = null)
     {
-        _guard      = guard.Compile();
-        _guardLabel = $"[{FormatExpr(guard.Body)}]";
-        _referencedVars.AddRange(VarCollector.Collect(guard));
-        return this;
-    }
-
-    /// <summary>
-    /// Sets the guard with an explicit display label. Use this overload when the
-    /// auto-derived label would be unclear, or for statement-bodied guards
-    /// (<c>() =&gt; { … }</c>) that cannot be represented as an expression tree.
-    /// Variables that occur only in such a guard must be declared with <see cref="Free{T}"/>.
-    /// </summary>
-    /// <param name="guard">The boolean guard expression.</param>
-    /// <param name="label">Display label shown on the transition, e.g. <c>"[n &lt; 10]"</c>.</param>
-    public TransitionBuilder Guard(Func<bool> guard, string label)
-    {
-        _guard      = guard;
-        _guardLabel = label;
+        var (problem, variables) = GuardRule.Inspect(guard);
+        _guardProblem = problem;
+        _guard        = guard.Compile();
+        _guardLabel   = label ?? $"[{FormatExpr(guard.Body)}]";
+        _referencedVars.AddRange(variables);
         return this;
     }
 
@@ -772,11 +791,17 @@ public sealed class TransitionBuilder
     /// bound (CPN Tools' syntax check), registers the transition with the model, and returns it.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// A variable occurs only in output arcs / the guard and its colour set cannot be enumerated
+    /// The guard reads state other than the transition's variables (<see cref="GuardRule"/>), or
+    /// a variable occurs only in output arcs / the guard and its colour set cannot be enumerated
     /// (CPN Tools: "variable cannot be bound").
     /// </exception>
     public Transition Build()
     {
+        if (_guardProblem is not null)
+            throw new InvalidOperationException(
+                $"Transition '{_name}': the guard is not an expression over the transition's variables; " +
+                $"{_guardProblem}. {GuardRule.Requirement}");
+
         // Var(t): variables bound by input arcs first (in arc order), then the remaining
         // variables referenced by the guard, output arcs, or declared with Free().
         var variables = new List<IVar>();

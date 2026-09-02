@@ -10,7 +10,10 @@
 #
 # Optioner:
 #   --port <port>   Port (default: 5000)
-#   <model.cs>      Valgfri: vis kun denne model (ingen dropdown i UI)
+#   --line <n>      Valgfri: cursorlinje i model.cs; modellen, hvis klasse omslutter
+#                   linjen, vises (filer med flere modeller)
+#   <model.cs>      Valgfri: vis kun denne model (ingen dropdown i UI). Ligger filen i
+#                   et projekt, bygges projektet med dotnet build.
 #   --help          Vis denne hjælp
 ###############################################################################
 
@@ -22,10 +25,12 @@ SERVER_CSPROJ="$PROJECT_ROOT/src/CSharPN.Visualizer.Server/CSharPN.Visualizer.Se
 
 PORT="5000"
 MODEL_FILE=""
+MODEL_LINE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --port) PORT="$2"; shift 2 ;;
+        --line) MODEL_LINE="$2"; shift 2 ;;
         --help)
             grep "^#" "$0" | sed 's/^# *//' | sed 's/^##*//'
             exit 0
@@ -62,4 +67,5 @@ sleep 0.3
 export ASPNETCORE_URLS="http://0.0.0.0:$PORT"
 export ASPNETCORE_ENVIRONMENT="Development"
 export CSHARPN_MODEL_FILE="$MODEL_FILE"
+export CSHARPN_MODEL_LINE="$MODEL_LINE"
 exec dotnet run --project "$SERVER_CSPROJ" --no-launch-profile

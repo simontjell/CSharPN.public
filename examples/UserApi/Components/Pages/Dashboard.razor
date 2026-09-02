@@ -260,17 +260,19 @@ curl -s http://localhost:5001/api/reset-tokens | jq</code></pre>
         RefreshState();
     }
 
-    private void OnModelChanged()
+    private void OnModelChanged(int firings)
     {
-        _firingCount++;
+        _firingCount += firings;
         InvokeAsync(() => { RefreshState(); StateHasChanged(); });
     }
 
+    // Read through the host rather than touching Marking directly: the engine
+    // thread may be firing while this runs.
     private void RefreshState()
     {
-        _users       = Model.Users.Marking.ToList();
-        _sessions    = Model.Sessions.Marking.ToList();
-        _resetTokens = Model.ResetTokens.Marking.ToList();
+        _users       = ApiHost.Read(Model.Users,       db => db.All);
+        _resetTokens = ApiHost.Read(Model.ResetTokens, db => db.All);
+        _sessions    = ApiHost.Read(Model.Sessions);
     }
 
     // ── Form handlers ─────────────────────────────────────────────────────────

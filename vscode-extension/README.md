@@ -28,17 +28,25 @@ Reload VS Code after installation.
 
 ## Usage
 
-1. Open a `.cs` file containing a CPN model (must be inside the CSharPN project tree).
+1. Open a `.cs` file containing a CPN model (must be inside the CSharPN project tree) and
+   put the cursor inside the model class you want to see. A file may contain several
+   models — a test file, say; the one whose class contains the cursor is shown, or the
+   first model in the file when the cursor is outside any.
 2. Press **Ctrl+Shift+V** (or **Cmd+Shift+V** on Mac), or click the preview icon in the editor title bar.
 3. The extension:
    - Finds a free port automatically
-   - Starts `scripts/serve.sh` with the model file
+   - Starts `scripts/serve.sh` with the model file and the cursor line
    - Opens the visualiser in a panel to the right of the editor
 4. Edit the model and save — the visualiser hot-reloads automatically.
+
+When the file belongs to a project (a `.csproj` above it), the server builds that project
+with `dotnet build` and loads the model from the output, so NuGet packages, project
+references and `InternalsVisibleTo` resolve exactly as in the IDE. Every `.cs` file of
+the project is watched. A loose file without a project is compiled on its own.
 
 ## How it works
 
 - The extension walks up from the open file to find `scripts/serve.sh` (the CSharPN project root).
-- It spawns `serve.sh --port <free-port> <model.cs>` which starts the Blazor Server with hot-reload.
+- It spawns `serve.sh --port <free-port> --line <cursor-line> <model.cs>` which starts the Blazor Server with hot-reload.
 - The visualiser opens in VS Code's built-in Simple Browser, positioned to the right of the active editor.
 - The server process is killed when the extension deactivates or a new preview is opened.

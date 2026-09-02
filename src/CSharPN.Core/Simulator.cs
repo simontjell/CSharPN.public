@@ -62,6 +62,11 @@ public sealed class CpnSimulator
     /// </summary>
     public IReadOnlyList<(Transition Transition, BindingSnapshot Binding)> GetEnabled()
     {
+        lock (Model.SyncRoot) return GetEnabledLocked();
+    }
+
+    private List<(Transition, BindingSnapshot)> GetEnabledLocked()
+    {
         var result = new List<(Transition, BindingSnapshot)>();
         foreach (var t in Model.Transitions)
             foreach (var b in t.GetEnabledBindings())
@@ -77,15 +82,21 @@ public sealed class CpnSimulator
     /// </summary>
     public bool Step()
     {
-        var enabled = GetEnabled();
-        if (enabled.Count == 0)
+        // "Pick an enabled binding" and "fire it" must be one atomic unit: another
+        // thread firing in between would invalidate the binding we picked.
+        TransitionFiredEventArgs args;
+        lock (Model.SyncRoot)
         {
-            DeadlockReached?.Invoke(this, EventArgs.Empty);
-            return false;
+            var enabled = GetEnabledLocked();
+            if (enabled.Count == 0)
+            {
+                DeadlockReached?.Invoke(this, EventArgs.Empty);
+                return false;
+            }
+            var (t, b) = enabled[_random.Next(enabled.Count)];
+            args = FireLocked(t, b);
         }
-
-        var (t, b) = enabled[_random.Next(enabled.Count)];
-        FireInternal(t, b);
+        TransitionFired?.Invoke(this, args);
         return true;
     }
 
@@ -108,19 +119,26 @@ public sealed class CpnSimulator
 
         for (int i = 0; i < options.MaxSteps; i++)
         {
-            var enabled = GetEnabled();
-
-            if (enabled.Count == 0)
+            // The lock is taken per step, not around the whole run, so a concurrent
+            // driver of the same model is not starved for the duration of the run.
+            TransitionFiredEventArgs args;
+            lock (Model.SyncRoot)
             {
-                const string reason = "Deadlock – no enabled transitions.";
-                options.Logger?.Invoke(reason);
-                DeadlockReached?.Invoke(this, EventArgs.Empty);
-                return new SimulationResult(_stepCount, IsDeadlock: true, reason);
-            }
+                var enabled = GetEnabledLocked();
 
-            var (t, b) = enabled[_random.Next(enabled.Count)];
-            options.Logger?.Invoke($"Step {_stepCount + 1,4}: {t.Name} [{b}]");
-            FireInternal(t, b);
+                if (enabled.Count == 0)
+                {
+                    const string reason = "Deadlock – no enabled transitions.";
+                    options.Logger?.Invoke(reason);
+                    DeadlockReached?.Invoke(this, EventArgs.Empty);
+                    return new SimulationResult(_stepCount, IsDeadlock: true, reason);
+                }
+
+                var (t, b) = enabled[_random.Next(enabled.Count)];
+                options.Logger?.Invoke($"Step {_stepCount + 1,4}: {t.Name} [{b}]");
+                args = FireLocked(t, b);
+            }
+            TransitionFired?.Invoke(this, args);
         }
 
         var maxReason = $"Maximum steps ({options.MaxSteps}) reached.";
@@ -132,8 +150,16 @@ public sealed class CpnSimulator
 
     private void FireInternal(Transition t, BindingSnapshot b)
     {
+        TransitionFiredEventArgs args;
+        lock (Model.SyncRoot) args = FireLocked(t, b);
+        TransitionFired?.Invoke(this, args);
+    }
+
+    /// <summary>Fires and bumps the step counter. Caller must hold <see cref="CpnModel.SyncRoot"/>.</summary>
+    private TransitionFiredEventArgs FireLocked(Transition t, BindingSnapshot b)
+    {
         t.Fire(b);
         _stepCount++;
-        TransitionFired?.Invoke(this, new TransitionFiredEventArgs(t, b, _stepCount));
+        return new TransitionFiredEventArgs(t, b, _stepCount);
     }
 }
