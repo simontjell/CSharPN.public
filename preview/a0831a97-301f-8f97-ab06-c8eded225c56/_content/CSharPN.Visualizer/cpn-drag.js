@@ -183,6 +183,15 @@ function nearestArcPath(svg, px, py, thresholdSvg) {
 }
 
 
+// Highlight the arc an inscription belongs to (label id is "fromId|toId"), so the
+// user can see which arc a label is attached to while hovering or dragging it.
+function setArcHighlight(svg, labelEl, on) {
+    if (!labelEl || labelEl.dataset.labelKind !== 'inscription') return;
+    const pathEl = svg.querySelector(`[data-arc-path="${labelEl.dataset.labelId}"]`);
+    if (pathEl) pathEl.classList.toggle('arc-highlight', on);
+    labelEl.classList.toggle('label-highlight', on);
+}
+
 export function initDrag(dotNetRef, svgId) {
     disposeDrag(svgId);
 
@@ -241,6 +250,7 @@ export function initDrag(dotNetRef, svgId) {
                 offX: pt.x - (gx + lx),
                 offY: pt.y - (gy + ly),
             };
+            setArcHighlight(svg, labelEl, true);
             return;
         }
 
@@ -373,6 +383,7 @@ export function initDrag(dotNetRef, svgId) {
             dotNetRef.invokeMethodAsync('UpdateLabelOffset',
                 labelDrag.id, labelDrag.kind,
                 lx - labelDrag.bx, ly - labelDrag.by).catch(() => {});
+            setArcHighlight(svg, labelDrag.el, false);
             labelDrag = null;
             return;
         }
@@ -456,14 +467,20 @@ export function initDrag(dotNetRef, svgId) {
         }, 150);
     };
 
+    // ── hover: highlight the arc of an inscription under the pointer ───────
+    const onOver = e => setArcHighlight(svg, e.target.closest?.('[data-label-id]'), true);
+    const onOut  = e => { if (!labelDrag) setArcHighlight(svg, e.target.closest?.('[data-label-id]'), false); };
+
     svg.addEventListener('mousedown', onDown);
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup',   onUp);
     svg.addEventListener('dblclick',   onDblClick);
     svg.addEventListener('click',      onClick, true);  // capture phase — beats Blazor @onclick
     svg.addEventListener('wheel',      onWheel, { passive: false });
+    svg.addEventListener('mouseover',  onOver);
+    svg.addEventListener('mouseout',   onOut);
 
-    _handlers.set(svgId, { svg, onDown, onMove, onUp, onDblClick, onClick, onWheel });
+    _handlers.set(svgId, { svg, onDown, onMove, onUp, onDblClick, onClick, onWheel, onOver, onOut });
 }
 
 export function disposeDrag(svgId) {
@@ -475,6 +492,8 @@ export function disposeDrag(svgId) {
     h.svg.removeEventListener('dblclick',  h.onDblClick);
     h.svg.removeEventListener('click',     h.onClick, true);
     h.svg.removeEventListener('wheel',     h.onWheel);
+    h.svg.removeEventListener('mouseover', h.onOver);
+    h.svg.removeEventListener('mouseout',  h.onOut);
     _handlers.delete(svgId);
 }
 

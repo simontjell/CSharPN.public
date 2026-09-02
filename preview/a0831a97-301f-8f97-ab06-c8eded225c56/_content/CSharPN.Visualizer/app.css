@@ -22,6 +22,7 @@
     --trans-enabled: #228b22;   /* CPN Tools forest-green enabled */
     --arc-color:     #5a3e28;   /* dark brown arcs */
     --arc-active:    #1a60c0;
+    --arc-highlight: #d9480f;   /* arc + inscription while the inscription is hovered/dragged */
     --token-dot:     #2060c0;
 }
 
@@ -256,6 +257,19 @@ html, body {
 
 /* Restyle arrowhead for active arcs via marker */
 .arc-active { marker-end: url(#ah-active); }
+
+/* Arc whose inscription is being hovered or dragged: makes the label ↔ arc
+   attachment visible. Set by cpn-drag.js; wins over .arc-active. */
+.arrowhead-highlight { fill: var(--arc-highlight); }
+.arc.arc-highlight {
+    stroke: var(--arc-highlight);
+    stroke-width: 3;
+    marker-end: url(#ah-highlight);
+}
+.arc-inscription.label-highlight {
+    fill: var(--arc-highlight);
+    font-weight: bold;
+}
 
 /* Arc inscription text alongside arcs */
 .arc-inscription {
