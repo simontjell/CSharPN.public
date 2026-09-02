@@ -3,7 +3,7 @@ namespace CSharPN.Core;
 // ── CpnTime ───────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Integer-based model-time point for timed CPN (Jensen Vol. 2 §1).
+/// Integer-based model-time point for timed CPN (Jensen &amp; Kristensen 2009, Chapter 10).
 /// Arithmetic is in whole time units; the global clock never goes backwards.
 /// </summary>
 public readonly struct CpnTime : IComparable<CpnTime>, IEquatable<CpnTime>
@@ -37,11 +37,11 @@ public readonly struct CpnTime : IComparable<CpnTime>, IEquatable<CpnTime>
 // ── Timed<T> ──────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// A CPN token of colour <typeparamref name="T"/> annotated with a timestamp
-/// <see cref="ReadyAt"/>. The token can only be consumed once the global clock
-/// has reached or passed that timestamp (Jensen's <c>c@t</c> notation).
+/// A CPN token of colour <typeparamref name="T"/> annotated with a time stamp
+/// <see cref="ReadyAt"/> (Jensen's <c>c@t</c> notation). The token is <em>ready</em>,
+/// i.e. can be consumed, once the global clock has reached or passed that time stamp.
 /// </summary>
-public readonly record struct Timed<T>(T Value, CpnTime ReadyAt) where T : notnull
+public readonly record struct Timed<T>(T Value, CpnTime ReadyAt) : ITimedToken where T : notnull
 {
     /// <summary>Creates a token that becomes available at absolute time <paramref name="time"/>.</summary>
     public static Timed<T> At(T value, int time) => new(value, new CpnTime(time));
@@ -55,18 +55,75 @@ public readonly record struct Timed<T>(T Value, CpnTime ReadyAt) where T : notnu
     public override string ToString() => $"{Value}{ReadyAt}";
 }
 
+// ── Timed multiset helpers ────────────────────────────────────────────────────
+
+/// <summary>
+/// Operations on timed multisets (Jensen &amp; Kristensen 2009, Section 10.3).
+/// A timed multiset is represented as a <see cref="Multiset{T}"/> of <see cref="Timed{T}"/>.
+/// </summary>
+internal static class TimedMultiset
+{
+    /// <summary>
+    /// The distinct colours that have at least <paramref name="atLeast"/> ready tokens
+    /// (time stamp ≤ <paramref name="clock"/>) in <paramref name="marking"/>, in first-seen order.
+    /// This is the untimed projection of the ready part of the marking, which is what
+    /// a binding element is enabled against ("colour enabled and ready").
+    /// </summary>
+    public static IEnumerable<T> ReadyColours<T>(Multiset<Timed<T>> marking, CpnTime clock, int atLeast)
+        where T : notnull
+    {
+        var counts = new Dictionary<T, int>();
+        var order  = new List<T>();
+        foreach (var token in marking.DistinctItems())
+        {
+            if (token.ReadyAt > clock) continue;
+            if (!counts.ContainsKey(token.Value)) order.Add(token.Value);
+            counts[token.Value] = (counts.TryGetValue(token.Value, out var n) ? n : 0) + marking.Count(token);
+        }
+        foreach (var colour in order)
+            if (counts[colour] >= atLeast) yield return colour;
+    }
+
+    /// <summary>
+    /// Removes <paramref name="count"/> ready tokens of colour <paramref name="colour"/> from
+    /// <paramref name="marking"/>, taking the tokens with the <b>smallest time stamps first</b>
+    /// (the policy of the CPN Tools simulator). Returns <see langword="null"/> when fewer than
+    /// <paramref name="count"/> ready tokens of that colour exist.
+    /// </summary>
+    public static Multiset<Timed<T>>? RemoveOldestReady<T>(
+        Multiset<Timed<T>> marking, T colour, int count, CpnTime clock)
+        where T : notnull
+    {
+        var eq = EqualityComparer<T>.Default;
+        var candidates = marking.DistinctItems()
+            .Where(tok => tok.ReadyAt <= clock && eq.Equals(tok.Value, colour))
+            .OrderBy(tok => tok.ReadyAt.Value);
+
+        var remaining = marking;
+        var need      = count;
+        foreach (var tok in candidates)
+        {
+            var take = Math.Min(need, marking.Count(tok));
+            remaining = remaining.Remove(tok, take);
+            need -= take;
+            if (need == 0) return remaining;
+        }
+        return null;
+    }
+}
+
 // ── TimedVarInputArc<T> ───────────────────────────────────────────────────────
 
 /// <summary>
-/// Input arc that binds a <see cref="Var{T}"/> to the <em>value</em> of a
-/// <see cref="Timed{T}"/> token whose <c>ReadyAt</c> ≤ current clock.
-/// An internal companion variable tracks the full token for correct token consumption.
+/// Pattern input arc on a timed place that binds a <see cref="Var{T}"/> to the
+/// <em>colour</em> of ready tokens. Binding elements are distinguished by colour only,
+/// never by time stamp (a binding is a function on <c>Var(t)</c>, Definition 4.3 (4));
+/// when the arc consumes, the ready tokens with the smallest time stamps are removed.
 /// </summary>
 internal sealed class TimedVarInputArc<T> : IInputArc where T : notnull
 {
     private readonly Place<Timed<T>> _place;
-    private readonly Var<T>          _valueVar;   // user-facing: bound to token value
-    private readonly Var<Timed<T>>   _timedVar;   // internal: bound to full Timed<T> (empty name)
+    private readonly Var<T>          _valueVar;
     private readonly int             _count;
     private readonly Func<CpnTime>   _getClock;
 
@@ -75,92 +132,75 @@ internal sealed class TimedVarInputArc<T> : IInputArc where T : notnull
         if (count < 1) throw new ArgumentOutOfRangeException(nameof(count));
         _place    = place;
         _valueVar = valueVar;
-        _timedVar = new Var<Timed<T>>(""); // empty name → hidden from binding display
         _getClock = getClock;
         _count    = count;
     }
 
-    public IPlaceInternal Place  => _place;
-    public string          Inscription => _count == 1 ? _valueVar.Name : $"{_count}`{_valueVar.Name}";
+    public IPlaceInternal Place => _place;
+    public string Inscription   => _count == 1 ? _valueVar.Name : $"{_count}`{_valueVar.Name}";
+    public IReadOnlyList<IVar> BoundVariables => [_valueVar];
 
     public IEnumerable<(object, Action, Action)> EnumerateCandidates(object available)
     {
+        if (_valueVar.IsBound)
+        {
+            // Unification with an earlier arc: only that colour, ownership stays there.
+            var remaining = TryConsume(available);
+            if (remaining is not null) yield return (remaining, () => { }, () => { });
+            yield break;
+        }
+
         var marking = (Multiset<Timed<T>>)available;
         var clock   = _getClock();
-
-        // If the value variable is already bound by an earlier arc, unify: only
-        // tokens carrying that value are candidates, and the value var's binding
-        // is owned by the earlier arc (we only bind/unbind the internal timed var).
-        var valueAlreadyBound = _valueVar.IsBound;
-
-        foreach (var token in marking.DistinctItems())
+        foreach (var colour in TimedMultiset.ReadyColours(marking, clock, _count))
         {
-            if (token.ReadyAt > clock || marking.Count(token) < _count)
-                continue;
-            if (valueAlreadyBound && !EqualityComparer<T>.Default.Equals(token.Value, _valueVar.Val))
-                continue;
-
-            var t        = token; // capture for closure
-            var consumed = Multiset.Repeat(t, _count);
-            yield return (
-                marking - consumed,
-                valueAlreadyBound
-                    ? () => _timedVar.Bind(t)
-                    : () => { _timedVar.Bind(t); _valueVar.Bind(t.Value); },
-                valueAlreadyBound
-                    ? () => _timedVar.Unbind()
-                    : () => { _timedVar.Unbind(); _valueVar.Unbind(); }
-            );
+            var c = colour; // capture
+            var remaining = TimedMultiset.RemoveOldestReady(marking, c, _count, clock)!;
+            yield return (remaining, () => _valueVar.Bind(c), () => _valueVar.Unbind());
         }
     }
 
-    public void ConsumeFromPlace()
-    {
-        // Use the internal timed var (reliably set via ApplyBindings) to identify
-        // the exact Timed<T> token to remove.
-        _place.Marking = _place.Marking - Multiset.Repeat(_timedVar.Val, _count);
-    }
-
-    public IEnumerable<(IVar, object)> GetCurrentVarBindings()
-    {
-        // Yield internal var first so ApplyBindings can restore it before ConsumeFromPlace.
-        if (_timedVar.IsBound) yield return (_timedVar, _timedVar.Val);
-        if (_valueVar.IsBound) yield return (_valueVar, _valueVar.Val!);
-    }
-
-    // Only the user-facing value variable is named; the internal timed var carries
-    // an empty name and is excluded from name-uniqueness checks.
-    public IEnumerable<IVar> Variables => [_valueVar];
+    public object? TryConsume(object available)
+        => TimedMultiset.RemoveOldestReady((Multiset<Timed<T>>)available, _valueVar.Val, _count, _getClock());
 }
 
 // ── TimedOutputArc<T> ────────────────────────────────────────────────────────
 
 /// <summary>
-/// Output arc that produces a <see cref="Timed{T}"/> token whose timestamp is
-/// <c>current clock + delayExpr()</c>.  Corresponds to Jensen's <c>e @+ d</c> notation.
+/// Output arc producing a <see cref="Timed{T}"/> token. Its time stamp is
+/// <c>clock + transition delay + arc delay</c> (Jensen &amp; Kristensen 2009, Section 10.1:
+/// the time stamp of a produced token is the global clock plus the time delay inscription
+/// of the transition plus the time delay inscription of the output arc, <c>e @+ d</c>).
 /// </summary>
 internal sealed class TimedOutputArc<T> : IOutputArc where T : notnull
 {
     private readonly Place<Timed<T>> _place;
     private readonly Func<T>         _valueExpr;
-    private readonly Func<int>        _delayExpr;
+    private readonly Func<int>       _arcDelay;
+    private readonly Func<int>       _transitionDelay;
     private readonly Func<CpnTime>   _getClock;
 
-    public TimedOutputArc(Place<Timed<T>> place, Func<T> valueExpr, Func<int> delayExpr, Func<CpnTime> getClock)
+    public TimedOutputArc(
+        Place<Timed<T>> place, Func<T> valueExpr, Func<int> arcDelay,
+        Func<int> transitionDelay, Func<CpnTime> getClock)
     {
-        _place     = place;
-        _valueExpr = valueExpr;
-        _delayExpr = delayExpr;
-        _getClock  = getClock;
+        _place           = place;
+        _valueExpr       = valueExpr;
+        _arcDelay        = arcDelay;
+        _transitionDelay = transitionDelay;
+        _getClock        = getClock;
     }
 
-    public IPlaceInternal Place  => _place;
-    public string          Inscription => "";   // delay expression can't be introspected
+    public IPlaceInternal Place => _place;
+    public string Inscription   => "";   // delay expression can't be introspected
 
-    public void ProduceToPlace()
+    public object Produce()
     {
-        var token = Timed<T>.After(_valueExpr(), _getClock(), _delayExpr());
-        _place.Marking = _place.Marking.Add(token, 1);
+        var delay = _transitionDelay() + _arcDelay();
+        if (delay < 0)
+            throw new InvalidOperationException(
+                $"Negative time delay ({delay}) on output arc to '{_place.Name}': time stamps cannot lie in the past.");
+        return Multiset.Of(Timed<T>.After(_valueExpr(), _getClock(), delay));
     }
 }
 

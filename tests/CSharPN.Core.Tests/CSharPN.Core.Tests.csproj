@@ -17,5 +17,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\CSharPN.Core\CSharPN.Core.csproj" />
+    <ProjectReference Include="..\..\examples\ClassicExamples\ClassicExamples.csproj" />
   </ItemGroup>
 </Project>

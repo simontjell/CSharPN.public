@@ -1,170 +1,185 @@
 namespace CSharPN.Core;
 
+// ── Token readiness (timed colour sets) ──────────────────────────────────────
+
+/// <summary>
+/// Implemented by <see cref="Timed{T}"/>. Lets the generic arcs recognise timed
+/// tokens so that a token is only available once its time stamp is ≤ the global
+/// clock (Jensen &amp; Kristensen 2009, Chapter 10: a token is <em>ready</em>).
+/// </summary>
+internal interface ITimedToken
+{
+    CpnTime ReadyAt { get; }
+}
+
+internal static class TokenReadiness
+{
+    /// <summary>Untimed tokens are always ready; timed tokens are ready when <c>ReadyAt ≤ clock</c>.</summary>
+    public static bool IsReady<T>(T token, CpnTime clock) where T : notnull
+        => token is not ITimedToken timed || timed.ReadyAt <= clock;
+}
+
 // ── Input arcs ────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Internal interface for input arcs. The framework uses this to enumerate
-/// candidate bindings and to consume tokens from places when a transition fires.
+/// Internal interface for input arcs, i.e. arcs <c>a = (p, t)</c> with arc
+/// expression <c>E(a)</c> (Jensen &amp; Kristensen 2009, Definition 4.2 (8)).
 /// </summary>
+/// <remarks>
+/// Two roles are separated:
+/// <list type="bullet">
+///   <item><description>
+///   <b>Pattern arcs</b> (<see cref="BoundVariables"/> non-empty) introduce variables. During
+///   binding enumeration they propose candidate values for their variables via
+///   <see cref="EnumerateCandidates"/>. This is CPN Tools' rule that a variable is bound
+///   from an input arc whose inscription is a pattern (here: a single variable).
+///   </description></item>
+///   <item><description>
+///   <b>Every</b> input arc evaluates its demand <c>E(a)⟨b⟩</c> under a complete binding via
+///   <see cref="TryConsume"/>. This is what the enabling rule (Definition 4.4) and the
+///   occurrence rule (Definition 4.5) use; expression arcs only take part here, so the
+///   order in which arcs are declared never matters for enabling.
+///   </description></item>
+/// </list>
+/// </remarks>
 internal interface IInputArc
 {
-    /// <summary>The place this arc reads from.</summary>
+    /// <summary>The place <c>p</c> this arc reads from.</summary>
     IPlaceInternal Place { get; }
+
     /// <summary>Short inscription shown on the arc in the visualizer (e.g. variable name).</summary>
     string Inscription { get; }
 
-    /// <summary>
-    /// Given the currently <paramref name="available"/> marking for this arc's place
-    /// (a <c>Multiset&lt;T&gt;</c> boxed as <c>object</c>), enumerates all candidate
-    /// bindings this arc can produce.
-    ///
-    /// Each candidate provides:
-    /// <list type="bullet">
-    ///   <item><description><c>updatedAvailable</c> – the remaining marking after consuming this candidate</description></item>
-    ///   <item><description><c>bind</c> – action that sets the arc's variable(s) to this candidate's values</description></item>
-    ///   <item><description><c>unbind</c> – action that clears those bindings</description></item>
-    /// </list>
-    /// </summary>
-    IEnumerable<(object updatedAvailable, Action bind, Action unbind)> EnumerateCandidates(object available);
+    /// <summary>The variables this arc binds (pattern variables). Empty for expression arcs.</summary>
+    IReadOnlyList<IVar> BoundVariables { get; }
 
     /// <summary>
-    /// Consumes the appropriate tokens from the actual place marking using the
-    /// currently bound variable values. Called during <see cref="Transition.Fire"/>.
+    /// Enumerates candidate bindings of this arc's variables given the tokens still
+    /// <paramref name="available"/> on the place (a boxed <c>Multiset&lt;T&gt;</c>).
+    /// Each candidate provides the remaining marking after this arc's demand, and
+    /// actions that bind / unbind the variables. Only valid for pattern arcs.
     /// </summary>
-    void ConsumeFromPlace();
+    IEnumerable<(object remaining, Action bind, Action unbind)> EnumerateCandidates(object available);
 
     /// <summary>
-    /// Returns (IVar, currentValue) pairs for all variables currently bound by this arc.
-    /// Used to capture a <see cref="BindingSnapshot"/>.
+    /// Evaluates the arc expression under the current (complete) binding, <c>E(a)⟨b⟩</c>,
+    /// and removes it from <paramref name="available"/>. Returns the remaining marking,
+    /// or <see langword="null"/> when <paramref name="available"/> does not contain the
+    /// demanded (and, for timed places, ready) tokens.
     /// </summary>
-    IEnumerable<(IVar var, object value)> GetCurrentVarBindings();
-
-    /// <summary>
-    /// The variables this arc declares (binds), regardless of current binding state.
-    /// Used at model-build time to verify variable-name uniqueness. Empty for arcs
-    /// that only reference already-bound variables (e.g. expression arcs).
-    /// </summary>
-    IEnumerable<IVar> Variables { get; }
+    object? TryConsume(object available);
 }
 
 // ── Output arcs ───────────────────────────────────────────────────────────────
 
-/// <summary>Internal interface for output arcs.</summary>
+/// <summary>
+/// Internal interface for output arcs, i.e. arcs <c>a = (t, p)</c>.
+/// </summary>
 internal interface IOutputArc
 {
-    /// <summary>The place this arc writes to.</summary>
+    /// <summary>The place <c>p</c> this arc writes to.</summary>
     IPlaceInternal Place { get; }
+
     /// <summary>Short inscription shown on the arc in the visualizer (e.g. expression label).</summary>
     string Inscription { get; }
 
     /// <summary>
-    /// Produces tokens into the place using the currently bound variable values.
-    /// Called during <see cref="Transition.Fire"/>.
+    /// Evaluates the arc expression under the current binding, <c>E(a)⟨b⟩</c>, and returns
+    /// the produced tokens as a boxed <c>Multiset&lt;T&gt;</c>. Does not touch the place.
     /// </summary>
-    void ProduceToPlace();
+    object Produce();
 }
 
 // ── Concrete input arcs ───────────────────────────────────────────────────────
 
 /// <summary>
-/// Input arc that binds a <see cref="Var{T}"/> to a single distinct token
-/// from a <see cref="Place{T}"/>, optionally consuming multiple copies.
+/// Pattern input arc with inscription <c>count`var</c>: binds <see cref="Var{T}"/> to one
+/// distinct token colour of the place, demanding <c>count</c> copies of it.
 /// </summary>
 internal sealed class VarInputArc<T> : IInputArc where T : notnull, IEquatable<T>
 {
-    private readonly Place<T> _place;
-    private readonly Var<T> _var;
-    private readonly int _count;
+    private readonly Place<T>      _place;
+    private readonly Var<T>        _var;
+    private readonly int           _count;
+    private readonly Func<CpnTime> _getClock;
 
-    public VarInputArc(Place<T> place, Var<T> var, int count = 1)
+    public VarInputArc(Place<T> place, Var<T> var, Func<CpnTime> getClock, int count = 1)
     {
         if (count < 1) throw new ArgumentOutOfRangeException(nameof(count));
-        _place = place;
-        _var = var;
-        _count = count;
+        _place    = place;
+        _var      = var;
+        _count    = count;
+        _getClock = getClock;
     }
 
     public IPlaceInternal Place => _place;
     public string Inscription   => _count == 1 ? _var.Name : $"{_count}`{_var.Name}";
+    public IReadOnlyList<IVar> BoundVariables => [_var];
 
     public IEnumerable<(object, Action, Action)> EnumerateCandidates(object available)
     {
-        var marking = (Multiset<T>)available;
-
         if (_var.IsBound)
         {
-            // Variable already bound by an earlier arc → unification: the only
-            // candidate is the matching token, and bind/unbind are no-ops so the
-            // earlier arc retains ownership of the binding.
-            var bound = _var.Val;
-            if (marking.Count(bound) >= _count)
-                yield return (marking - Multiset.Repeat(bound, _count), () => { }, () => { });
+            // Unification: the variable was bound by an earlier arc. The only candidate
+            // is that value; bind/unbind are no-ops so the earlier arc keeps ownership.
+            var remaining = TryConsume(available);
+            if (remaining is not null) yield return (remaining, () => { }, () => { });
             yield break;
         }
 
+        var marking = (Multiset<T>)available;
+        var clock   = _getClock();
         foreach (var token in marking.DistinctItems())
         {
-            if (marking.Count(token) >= _count)
-            {
-                var t = token; // capture
-                var consumed = Multiset.Repeat(t, _count);
-                yield return (
-                    marking - consumed,
-                    () => _var.Bind(t),
-                    () => _var.Unbind()
-                );
-            }
+            if (!TokenReadiness.IsReady(token, clock) || marking.Count(token) < _count) continue;
+            var t = token; // capture
+            yield return (marking - Multiset.Repeat(t, _count), () => _var.Bind(t), () => _var.Unbind());
         }
     }
 
-    public void ConsumeFromPlace() =>
-        _place.Marking = _place.Marking - Multiset.Repeat(_var.Val, _count);
-
-    public IEnumerable<(IVar, object)> GetCurrentVarBindings()
+    public object? TryConsume(object available)
     {
-        if (_var.IsBound) yield return (_var, _var.Val!);
+        var marking = (Multiset<T>)available;
+        var value   = _var.Val;
+        if (!TokenReadiness.IsReady(value, _getClock()) || marking.Count(value) < _count) return null;
+        return marking - Multiset.Repeat(value, _count);
     }
-
-    public IEnumerable<IVar> Variables => [_var];
 }
 
 /// <summary>
-/// Input arc that consumes a multiset computed by a lambda expression.
-/// The expression may reference bound <see cref="Var{T}"/> values from
-/// preceding arcs in the same transition.
-/// No new variable bindings are introduced.
+/// Expression input arc: its inscription is an arbitrary multiset expression over
+/// already-bound variables. It introduces no variables; it is only evaluated once
+/// all variables of the transition are bound, regardless of declaration order.
 /// </summary>
 internal sealed class ExprInputArc<T> : IInputArc where T : notnull, IEquatable<T>
 {
-    private readonly Place<T> _place;
-    private readonly Func<Multiset<T>> _expr;
+    private readonly Place<T>           _place;
+    private readonly Func<Multiset<T>>  _expr;
+    private readonly Func<CpnTime>      _getClock;
 
-    public ExprInputArc(Place<T> place, Func<Multiset<T>> expr)
+    public ExprInputArc(Place<T> place, Func<Multiset<T>> expr, Func<CpnTime> getClock)
     {
-        _place = place;
-        _expr = expr;
+        _place    = place;
+        _expr     = expr;
+        _getClock = getClock;
     }
 
-    public IPlaceInternal Place  => _place;
-    public string          Inscription => "";   // expression lambdas can't be introspected
+    public IPlaceInternal Place => _place;
+    public string Inscription   => "";   // expression lambdas can't be introspected
+    public IReadOnlyList<IVar> BoundVariables => [];
 
     public IEnumerable<(object, Action, Action)> EnumerateCandidates(object available)
+        => throw new InvalidOperationException("Expression arcs do not bind variables.");
+
+    public object? TryConsume(object available)
     {
-        var marking = (Multiset<T>)available;
+        var marking  = (Multiset<T>)available;
         var required = _expr();
-        if (required <= marking)
-            yield return (marking - required, () => { }, () => { });
+        var clock    = _getClock();
+        foreach (var token in required.DistinctItems())
+            if (!TokenReadiness.IsReady(token, clock)) return null;
+        return required <= marking ? marking - required : null;
     }
-
-    public void ConsumeFromPlace() =>
-        _place.Marking = _place.Marking - _expr();
-
-    public IEnumerable<(IVar, object)> GetCurrentVarBindings() =>
-        Enumerable.Empty<(IVar, object)>();
-
-    // Expression arcs reference already-bound variables via a closure; they
-    // declare none of their own.
-    public IEnumerable<IVar> Variables => [];
 }
 
 // ── Concrete output arcs ──────────────────────────────────────────────────────
@@ -182,9 +197,9 @@ internal sealed class SingleOutputArc<T> : IOutputArc where T : notnull, IEquata
         Inscription = inscription;
     }
 
-    public IPlaceInternal Place       => _place;
-    public string          Inscription { get; }
-    public void ProduceToPlace() => _place.Marking = _place.Marking.Add(_expr());
+    public IPlaceInternal Place => _place;
+    public string Inscription { get; }
+    public object Produce() => Multiset.Of(_expr());
 }
 
 /// <summary>Output arc that produces a multiset computed by a lambda.</summary>
@@ -200,7 +215,7 @@ internal sealed class MultisetOutputArc<T> : IOutputArc where T : notnull, IEqua
         Inscription = inscription;
     }
 
-    public IPlaceInternal Place       => _place;
-    public string          Inscription { get; }
-    public void ProduceToPlace() => _place.Marking = _place.Marking + _expr();
+    public IPlaceInternal Place => _place;
+    public string Inscription { get; }
+    public object Produce() => _expr();
 }

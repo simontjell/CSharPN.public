@@ -164,6 +164,80 @@ public abstract class CpnModel
     public IReadOnlyList<IPlace> Places => _places.AsReadOnly();
     public IReadOnlyList<Transition> Transitions => _transitions.AsReadOnly();
 
+    // ── Steps (Jensen & Kristensen 2009, Definitions 4.3 (6), 4.4 and 4.5) ────
+
+    /// <summary>
+    /// Is the step <paramref name="step"/> — a non-empty multiset of binding elements, given as a
+    /// list in which a binding element may appear several times — enabled in the current marking?
+    /// Definition 4.4: <c>∀(t,b) ∈ Y: G(t)⟨b⟩</c> and <c>∀p ∈ P: Σ_{(t,b)∈Y} E(p,t)⟨b⟩ ≤ M(p)</c>.
+    /// Two binding elements are <em>concurrently enabled</em> when the step containing both is
+    /// enabled; a binding element is concurrently enabled with itself when the step containing
+    /// it twice is enabled.
+    /// </summary>
+    public bool IsEnabled(IReadOnlyList<BindingSnapshot> step)
+        => TryComputeStep(step, produce: false) is not null;
+
+    /// <inheritdoc cref="IsEnabled(IReadOnlyList{BindingSnapshot})"/>
+    public bool IsEnabled(params BindingSnapshot[] step) => IsEnabled((IReadOnlyList<BindingSnapshot>)step);
+
+    /// <summary>
+    /// Lets the step occur. Definition 4.5: for every place
+    /// <c>M₂(p) = (M₁(p) − Σ_{(t,b)∈Y} E(p,t)⟨b⟩) + Σ_{(t,b)∈Y} E(t,p)⟨b⟩</c>.
+    /// The effect equals that of the binding elements occurring one after another in any order,
+    /// but the step is checked and applied as a whole (all-or-nothing).
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The step is not enabled in the current marking.</exception>
+    public void Occur(IReadOnlyList<BindingSnapshot> step)
+    {
+        var (afterRemoval, produced) = TryComputeStep(step, produce: true)
+            ?? throw new InvalidOperationException("The step is not enabled in the current marking.");
+
+        foreach (var (place, m) in afterRemoval)
+            ((IPlaceInternal)place).SetMarkingObject(m);
+        foreach (var (place, tokens) in produced)
+            place.SetMarkingObject(place.AddMarkingObject(place.GetMarkingObject(), tokens));
+    }
+
+    /// <inheritdoc cref="Occur(IReadOnlyList{BindingSnapshot})"/>
+    public void Occur(params BindingSnapshot[] step) => Occur((IReadOnlyList<BindingSnapshot>)step);
+
+    /// <summary>
+    /// Folds every binding element of the step through the marking: guards are checked and
+    /// the input demands are subtracted cumulatively, so the sum over the step is compared
+    /// with <c>M(p)</c>. Returns <see langword="null"/> when the step is not enabled.
+    /// </summary>
+    private (Dictionary<IPlace, object> afterRemoval, List<(IPlaceInternal place, object tokens)> produced)?
+        TryComputeStep(IReadOnlyList<BindingSnapshot> step, bool produce)
+    {
+        if (step.Count == 0)
+            throw new ArgumentException("A step is a non-empty multiset of binding elements.", nameof(step));
+
+        var remaining = new Dictionary<IPlace, object>(ReferenceEqualityComparer.Instance);
+        var produced  = new List<(IPlaceInternal, object)>();
+
+        foreach (var be in step)
+        {
+            if (!_transitions.Contains(be.Transition))
+                throw new ArgumentException(
+                    $"Binding element of transition '{be.Transition.Name}' does not belong to model '{Name}'.", nameof(step));
+
+            be.ApplyBindings();
+            try
+            {
+                if (!be.Transition.EvaluateGuard()) return null;
+                var after = be.Transition.TryConsumeAll(remaining);
+                if (after is null) return null;
+                remaining = after;
+                if (produce) produced.AddRange(be.Transition.Produce());
+            }
+            finally
+            {
+                be.ClearBindings();
+            }
+        }
+        return (remaining, produced);
+    }
+
     // ── State management ──────────────────────────────────────────────────────
 
     /// <summary>Resets all places to their initial markings.</summary>

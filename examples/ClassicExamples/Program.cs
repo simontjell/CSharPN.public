@@ -138,3 +138,40 @@ Console.WriteLine($"Mutual exclusion   : {(activeWriters == 0 || activeReaders =
 Console.WriteLine($"Steps fired        : {rwResult.Steps}");
 Console.WriteLine($"Termination        : {rwResult.TerminationReason}");
 Console.WriteLine();
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 4. Simple Protocol
+// ═══════════════════════════════════════════════════════════════════════════════
+
+PrintHeader("Simple Protocol (Jensen & Kristensen 2009, Ch. 2)");
+Console.WriteLine("Sender transmits 6 numbered packets over a lossy network; the receiver");
+Console.WriteLine("acknowledges with the number it expects next. Losses come from the free");
+Console.WriteLine("variable 'success' on the TransmitPacket / TransmitAck output arcs.");
+
+var sp    = new SimpleProtocol();
+var spSim = new CpnSimulator(sp);
+
+Console.WriteLine($"\nInitial state:");
+Console.WriteLine($"  PacketsToSend : {sp.PacketsToSend.Marking}");
+Console.WriteLine($"  NextSend      : {sp.NextSend.Marking}");
+Console.WriteLine($"  NextRec       : {sp.NextRec.Marking}");
+Console.WriteLine($"  DataReceived  : {sp.DataReceived.Marking}");
+
+Console.WriteLine();
+spSim.TransitionFired += (_, e) =>
+    Console.WriteLine($"  Step {e.StepNumber,3}: {e.Transition.Name,-15} [{e.Binding}]");
+
+var spResult = spSim.Run(new SimulationOptions
+{
+    MaxSteps = 60,
+    Random = new Random(3),
+    StopOnDeadlock = true
+});
+
+Console.WriteLine($"\nFinal state:");
+Console.WriteLine($"  NextSend      : {sp.NextSend.Marking}");
+Console.WriteLine($"  NextRec       : {sp.NextRec.Marking}");
+Console.WriteLine($"  DataReceived  : {sp.DataReceived.Marking}");
+Console.WriteLine($"\nProtocol complete : {sp.IsComplete}");
+Console.WriteLine($"Steps fired       : {spResult.Steps}");
+Console.WriteLine($"Termination       : {spResult.TerminationReason}");

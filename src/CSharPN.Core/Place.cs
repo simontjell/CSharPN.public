@@ -20,6 +20,8 @@ internal interface IPlaceInternal : IPlace
 {
     object GetMarkingObject();
     void SetMarkingObject(object marking);
+    /// <summary>Multiset sum <c>a + b</c> of two boxed markings of this place's colour set.</summary>
+    object AddMarkingObject(object a, object b);
 }
 
 /// <summary>
@@ -53,6 +55,7 @@ public sealed class Place<T> : IPlaceInternal
 
     object IPlaceInternal.GetMarkingObject() => Marking;
     void IPlaceInternal.SetMarkingObject(object marking) => Marking = (Multiset<T>)marking;
+    object IPlaceInternal.AddMarkingObject(object a, object b) => (Multiset<T>)a + (Multiset<T>)b;
 
     /// <summary>
     /// Adds one token to the current marking.

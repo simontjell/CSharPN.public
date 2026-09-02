@@ -45,6 +45,7 @@ CSharPN supports **untimed**, **timed**, and **hierarchical** CPNs within a sing
 
 - Source & documentation: <https://github.com/simontjell/CSharPN.public>
 - Hosted visualiser: <https://simontjell.github.io/CSharPN.public/>
+- Binding, enabling and occurrence semantics mapped to Jensen & Kristensen (2009): `SEMANTICS.md` in the repository root
 
 ## License
 
