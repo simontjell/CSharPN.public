@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/simontjell/CSharPN.public/compare/v0.3.0...v0.3.1) (2026-09-02)
+
+
+### Continuous Integration
+
+* attach the VS Code extension VSIX to every release ([#21](https://github.com/simontjell/CSharPN.public/issues/21)) ([e8b55d3](https://github.com/simontjell/CSharPN.public/commit/e8b55d31fd409a48520af0c8b5a93d1eca3126f5))
+
 ## [0.3.0](https://github.com/simontjell/CSharPN.public/compare/v0.2.1...v0.3.0) (2026-09-02)
 
 
