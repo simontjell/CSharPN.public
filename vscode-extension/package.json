@@ -2,7 +2,7 @@
   "name": "cpn-preview",
   "displayName": "CPN Preview",
   "description": "Open a CPN model file in the editor and preview the live simulation in a side panel (starts CSharPN Visualizer Server automatically).",
-  "version": "0.6.0",
+  "version": "0.0.0",
   "publisher": "simontjell",
   "license": "MIT",
   "engines": { "vscode": "^1.80.0" },

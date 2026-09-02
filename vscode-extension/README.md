@@ -7,24 +7,29 @@ Live CPN model preview inside VS Code. Opens the CSharPN Visualizer in a side pa
 - [.NET SDK](https://dotnet.microsoft.com/) (10.0+)
 - [Node.js](https://nodejs.org/) (for building the VSIX)
 
-## Build
+## Install
+
+Every [release of CSharPN](https://github.com/simontjell/CSharPN.public/releases) carries
+`cpn-preview-<version>.vsix` as an asset, built with the same version number as the
+`CSharPN.Core` package. Download it and install:
+
+```bash
+code --install-extension cpn-preview-<version>.vsix --force
+```
+
+Or in VS Code: **Extensions** > `...` > **Install from VSIX...** > select the file.
+
+Reload VS Code after installation.
+
+## Build locally
 
 ```bash
 cd vscode-extension
 bash build.sh
 ```
 
-This produces `cpn-preview-0.1.0.vsix`.
-
-## Install
-
-```bash
-code --install-extension cpn-preview-0.1.0.vsix --force
-```
-
-Or in VS Code: **Extensions** > `...` > **Install from VSIX...** > select the file.
-
-Reload VS Code after installation.
+This produces a `.vsix` from the version in `package.json` (a placeholder; the release
+workflow stamps the real version).
 
 ## Usage
 

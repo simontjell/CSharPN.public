@@ -9,7 +9,9 @@ name: Release Please
 #    .release-please-manifest.json) og opdaterer CHANGELOG.md.
 # 2. Når release-PR'en merges, opretter release-please et GitHub-release
 #    og et tag (vX.Y.Z). Det udløser publish-jobbet, som pakker
-#    CSharPN.Core og pusher .nupkg til nuget.org.
+#    CSharPN.Core og pusher .nupkg til nuget.org, og vsix-jobbet, som
+#    bygger VS Code-udvidelsen (cpn-preview-X.Y.Z.vsix) med samme
+#    versionsnummer og vedhæfter den som asset på releaset.
 #
 # Publiceringen bruger nuget.org Trusted Publishing (OIDC): ingen API-nøgle
 # gemmes som secret. GitHub Actions udsteder en kortlivet OIDC-token
@@ -92,3 +94,33 @@ jobs:
             --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
+
+  vsix:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # gh release upload
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Byg cpn-preview-${{ needs.release-please.outputs.version }}.vsix
+        working-directory: vscode-extension
+        run: |
+          # Udvidelsen følger pakkens versionsnummer; package.json-versionen i
+          # repoet er kun en placeholder til lokale builds.
+          npm version "${{ needs.release-please.outputs.version }}" --no-git-tag-version --allow-same-version
+          npx --yes @vscode/vsce package --no-dependencies \
+            --out "cpn-preview-${{ needs.release-please.outputs.version }}.vsix"
+
+      - name: Vedhæft VSIX på releaset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ needs.release-please.outputs.tag_name }}" \
+            "vscode-extension/cpn-preview-${{ needs.release-please.outputs.version }}.vsix" \
+            --clobber
