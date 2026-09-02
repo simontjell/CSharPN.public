@@ -127,6 +127,10 @@ internal sealed class TimedVarInputArc<T> : IInputArc where T : notnull
         if (_timedVar.IsBound) yield return (_timedVar, _timedVar.Val);
         if (_valueVar.IsBound) yield return (_valueVar, _valueVar.Val!);
     }
+
+    // Only the user-facing value variable is named; the internal timed var carries
+    // an empty name and is excluded from name-uniqueness checks.
+    public IEnumerable<IVar> Variables => [_valueVar];
 }
 
 // ── TimedOutputArc<T> ────────────────────────────────────────────────────────

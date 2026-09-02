@@ -23,6 +23,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CSharPN.Wasm", "src\CSharPN
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UserApi", "examples\UserApi\UserApi.csproj", "{A1B2C3D4-0010-0010-0010-000000000010}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "private-examples", "private-examples", "{F69D879C-2CD2-024F-9673-EDBDFAC39B02}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RegistryOfShareholders2", "private-examples\RegistryOfShareholders2\RegistryOfShareholders2.csproj", "{D85AD0BF-92E5-4E5D-8D97-B65560A64582}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -153,8 +157,23 @@ Global
 		{A1B2C3D4-0010-0010-0010-000000000010}.Release|x64.Build.0 = Release|Any CPU
 		{A1B2C3D4-0010-0010-0010-000000000010}.Release|x86.ActiveCfg = Release|Any CPU
 		{A1B2C3D4-0010-0010-0010-000000000010}.Release|x86.Build.0 = Release|Any CPU
+		{D85AD0BF-92E5-4E5D-8D97-B65560A64582}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D85AD0BF-92E5-4E5D-8D97-B65560A64582}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D85AD0BF-92E5-4E5D-8D97-B65560A64582}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{D85AD0BF-92E5-4E5D-8D97-B65560A64582}.Debug|x64.Build.0 = Debug|Any CPU
+		{D85AD0BF-92E5-4E5D-8D97-B65560A64582}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D85AD0BF-92E5-4E5D-8D97-B65560A64582}.Debug|x86.Build.0 = Debug|Any CPU
+		{D85AD0BF-92E5-4E5D-8D97-B65560A64582}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D85AD0BF-92E5-4E5D-8D97-B65560A64582}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D85AD0BF-92E5-4E5D-8D97-B65560A64582}.Release|x64.ActiveCfg = Release|Any CPU
+		{D85AD0BF-92E5-4E5D-8D97-B65560A64582}.Release|x64.Build.0 = Release|Any CPU
+		{D85AD0BF-92E5-4E5D-8D97-B65560A64582}.Release|x86.ActiveCfg = Release|Any CPU
+		{D85AD0BF-92E5-4E5D-8D97-B65560A64582}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{D85AD0BF-92E5-4E5D-8D97-B65560A64582} = {F69D879C-2CD2-024F-9673-EDBDFAC39B02}
 	EndGlobalSection
 EndGlobal

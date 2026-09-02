@@ -117,7 +117,40 @@ public abstract class CpnModel
     /// </summary>
     protected TransitionBuilder AddTransition(string name) => new(name, this);
 
-    internal void RegisterTransition(Transition t) => _transitions.Add(t);
+    internal void RegisterTransition(Transition t)
+    {
+        _transitions.Add(t);
+        ValidateUniqueVariableNames();
+    }
+
+    /// <summary>
+    /// Verifies that no two <em>distinct</em> <see cref="Var{T}"/> instances in the model
+    /// share the same <see cref="Var{T}.Name"/>. Reusing the same instance across arcs or
+    /// transitions is allowed; two separately-created variables with an identical name are not,
+    /// because bindings are identified by name (e.g. in <see cref="BindingSnapshot"/>).
+    /// Called after every transition is registered.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">A duplicate variable name is found.</exception>
+    private void ValidateUniqueVariableNames()
+    {
+        var byName = new Dictionary<string, IVar>(StringComparer.Ordinal);
+        var seen   = new HashSet<IVar>(ReferenceEqualityComparer.Instance);
+
+        foreach (var transition in _transitions)
+            foreach (var v in transition.Variables)
+            {
+                if (string.IsNullOrEmpty(v.Name)) continue; // unnamed/internal vars are exempt
+                if (!seen.Add(v)) continue;                 // same instance already accounted for
+
+                if (byName.TryGetValue(v.Name, out var existing) && !ReferenceEquals(existing, v))
+                    throw new InvalidOperationException(
+                        $"Duplicate variable name '{v.Name}' in model '{Name}': two distinct " +
+                        "Var instances share the same Name. Give each variable a unique name, " +
+                        "or reuse the same Var instance across arcs/transitions.");
+
+                byName[v.Name] = v;
+            }
+    }
 
     /// <summary>
     /// Injects a place created outside this model (e.g. in a sub-page) into

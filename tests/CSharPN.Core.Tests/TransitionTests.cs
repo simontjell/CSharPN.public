@@ -309,4 +309,117 @@ public class TransitionTests
         var bindings = net.Add.GetEnabledBindings();
         bindings.Count.Should().Be(1);
     }
+
+    // ── Variable-name uniqueness ──────────────────────────────────────────────
+
+    private class DuplicateNameSameTransition : CpnModel
+    {
+        public DuplicateNameSameTransition()
+        {
+            var a = AddPlace("A", Multiset.Of(1));
+            var b = AddPlace("B", Multiset.Of(1));
+            AddTransition("T")
+                .Input(a, new Var<int>("x"))
+                .Input(b, new Var<int>("x"))   // distinct instance, same name
+                .Build();
+        }
+    }
+
+    private class DuplicateNameAcrossTransitions : CpnModel
+    {
+        public DuplicateNameAcrossTransitions()
+        {
+            var a = AddPlace("A", Multiset.Of(1));
+            var b = AddPlace("B", Multiset.Of(1));
+            AddTransition("T1").Input(a, new Var<int>("x")).Build();
+            AddTransition("T2").Input(b, new Var<int>("x")).Build(); // distinct instance, same name
+        }
+    }
+
+    private class SharedInstanceAcrossTransitions : CpnModel
+    {
+        public SharedInstanceAcrossTransitions()
+        {
+            var a = AddPlace("A", Multiset.Of(1));
+            var b = AddPlace("B", Multiset.Of(1));
+            var x = new Var<int>("x");
+            AddTransition("T1").Input(a, x).Build();
+            AddTransition("T2").Input(b, x).Build(); // same instance — allowed
+        }
+    }
+
+    [Fact]
+    public void Distinct_variables_with_same_name_in_one_transition_throws()
+    {
+        var act = () => new DuplicateNameSameTransition();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Duplicate variable name 'x'*");
+    }
+
+    [Fact]
+    public void Distinct_variables_with_same_name_across_transitions_throws()
+    {
+        var act = () => new DuplicateNameAcrossTransitions();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Duplicate variable name 'x'*");
+    }
+
+    [Fact]
+    public void Reusing_the_same_variable_instance_across_transitions_is_allowed()
+    {
+        var act = () => new SharedInstanceAcrossTransitions();
+        act.Should().NotThrow();
+    }
+
+    // ── Guard label derivation ────────────────────────────────────────────────
+
+    private record Owner(string Name);
+    private record Account(Owner Holder) : IEquatable<Account>;
+
+    private class GuardDerivedLabelNet : CpnModel
+    {
+        public GuardDerivedLabelNet()
+        {
+            var owners   = AddPlace("Owners", Multiset.Of(new Owner("x")));
+            var accounts = AddPlace("Accounts", Multiset.Of(new Account(new Owner("x"))));
+            var p = new Var<Owner>("p");
+            var a = new Var<Account>("a");
+            T = AddTransition("MakeDeposit")
+                .Input(owners, p)
+                .Input(accounts, a)
+                .Guard(() => p.Val == a.Val.Holder)   // no explicit label → derived
+                .Build();
+        }
+
+        public Transition T { get; }
+    }
+
+    [Fact]
+    public void Guard_label_is_derived_from_the_expression()
+    {
+        var net = new GuardDerivedLabelNet();
+        net.T.GuardLabel.Should().Be("[p == a.Holder]");
+    }
+
+    private class GuardExplicitLabelNet : CpnModel
+    {
+        public GuardExplicitLabelNet()
+        {
+            var owners = AddPlace("Owners", Multiset.Of(new Owner("x")));
+            var p = new Var<Owner>("p");
+            T = AddTransition("T")
+                .Input(owners, p)
+                .Guard(() => p.Val.Name == "x", "[custom]")   // explicit label
+                .Build();
+        }
+
+        public Transition T { get; }
+    }
+
+    [Fact]
+    public void Explicit_guard_label_overload_is_used_verbatim()
+    {
+        var net = new GuardExplicitLabelNet();
+        net.T.GuardLabel.Should().Be("[custom]");
+    }
 }

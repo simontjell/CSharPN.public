@@ -38,6 +38,13 @@ internal interface IInputArc
     /// Used to capture a <see cref="BindingSnapshot"/>.
     /// </summary>
     IEnumerable<(IVar var, object value)> GetCurrentVarBindings();
+
+    /// <summary>
+    /// The variables this arc declares (binds), regardless of current binding state.
+    /// Used at model-build time to verify variable-name uniqueness. Empty for arcs
+    /// that only reference already-bound variables (e.g. expression arcs).
+    /// </summary>
+    IEnumerable<IVar> Variables { get; }
 }
 
 // ── Output arcs ───────────────────────────────────────────────────────────────
@@ -117,6 +124,8 @@ internal sealed class VarInputArc<T> : IInputArc where T : notnull, IEquatable<T
     {
         if (_var.IsBound) yield return (_var, _var.Val!);
     }
+
+    public IEnumerable<IVar> Variables => [_var];
 }
 
 /// <summary>
@@ -152,6 +161,10 @@ internal sealed class ExprInputArc<T> : IInputArc where T : notnull, IEquatable<
 
     public IEnumerable<(IVar, object)> GetCurrentVarBindings() =>
         Enumerable.Empty<(IVar, object)>();
+
+    // Expression arcs reference already-bound variables via a closure; they
+    // declare none of their own.
+    public IEnumerable<IVar> Variables => [];
 }
 
 // ── Concrete output arcs ──────────────────────────────────────────────────────

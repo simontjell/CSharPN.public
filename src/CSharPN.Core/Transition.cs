@@ -188,6 +188,9 @@ public sealed class Transition
         }
     }
 
+    /// <summary>The variables declared (bound) by this transition's input arcs.</summary>
+    internal IEnumerable<IVar> Variables => _inputArcs.SelectMany(a => a.Variables);
+
     public override string ToString() => $"Transition(\"{Name}\")";
 
     // ── Arc views for visualization / tooling ─────────────────────────────────
@@ -298,15 +301,27 @@ public sealed class TransitionBuilder
     // ── Guard ─────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Sets the guard: a boolean expression that must be true for the transition to be enabled.
-    /// Evaluated after all variable bindings have been applied.
+    /// Sets the guard from an expression tree. The display label is derived
+    /// automatically from the expression body — <c>() =&gt; p.Val == a.Val.Owner</c>
+    /// shows <c>p == a.Owner</c> (the <c>.Val</c> suffix is stripped for readability).
+    /// Use the <see cref="Guard(Func{bool}, string)"/> overload for a custom label
+    /// or a statement-bodied guard.
+    /// </summary>
+    public TransitionBuilder Guard(Expression<Func<bool>> guard)
+    {
+        _guard      = guard.Compile();
+        _guardLabel = $"[{FormatExpr(guard.Body)}]";
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the guard with an explicit display label. Use this overload when the
+    /// auto-derived label would be unclear, or for statement-bodied guards
+    /// (<c>() =&gt; { … }</c>) that cannot be represented as an expression tree.
     /// </summary>
     /// <param name="guard">The boolean guard expression.</param>
-    /// <param name="label">
-    /// Optional display label shown on the transition in the visualizer, e.g. <c>"[n &lt; 10]"</c>.
-    /// Defaults to <c>"[G]"</c> when omitted.
-    /// </param>
-    public TransitionBuilder Guard(Func<bool> guard, string? label = null)
+    /// <param name="label">Display label shown on the transition, e.g. <c>"[n &lt; 10]"</c>.</param>
+    public TransitionBuilder Guard(Func<bool> guard, string label)
     {
         _guard      = guard;
         _guardLabel = label;

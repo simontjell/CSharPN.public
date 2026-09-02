@@ -85,9 +85,18 @@
 
     @* ── Canvas ───────────────────────────────────────────────────────────── *@
     <main class="canvas-wrap">
+        @if (!string.IsNullOrEmpty(Sim.LastHotError))
+        {
+            <div class="hot-error" role="alert">
+                <span class="hot-error-title">⚠ Model failed to compile</span>
+                <pre class="hot-error-body">@Sim.LastHotError</pre>
+            </div>
+        }
         @if (_nodeById.Count == 0)
         {
-            <div class="empty-state">Loading model…</div>
+            <div class="empty-state">
+                @(string.IsNullOrEmpty(Sim.LastHotError) ? "Loading model…" : "No model loaded — fix the error above.")
+            </div>
         }
         else
         {
@@ -305,12 +314,13 @@
                                 box.Lines[li])
                         }
 
-                        @* Guard expression below the name *@
+                        @* Guard expression: default placement is northeast of the box *@
                         @if (box.HasGuard)
                         {
-                            var guardY = blockTop + box.NameBlockH + GuardGap + GuardLineH / 2;
-                            @DraggableLabel("guard-label", node.Id, "guard", 0, guardY,
-                                "text-anchor=\"middle\" dominant-baseline=\"central\"",
+                            var guardX = 0.0;   // left edge of the inscription at the transition centre
+                            var guardY = -th / 2 - GuardGap - GuardLineH / 2;
+                            @DraggableLabel("guard-label", node.Id, "guard", guardX, guardY,
+                                "text-anchor=\"start\" dominant-baseline=\"central\"",
                                 guardLabel)
                         }
                     </g>
@@ -377,7 +387,6 @@
     private const double TransPadY  = 8;     // vertical text padding inside the rect
     private const double TransLineH = 14;    // line height for the bold 11px name font
     private const double NameCharW  = 6.8;   // approx advance of bold 11px monospace
-    private const double GuardCharW = 6.0;   // approx advance of italic 10px monospace
     private const double GuardLineH = 13;    // line height for the guard label
     private const double GuardGap   = 4;     // gap between name block and guard line
 
@@ -900,11 +909,12 @@
         var hasGuard   = _guardLabels.TryGetValue(id, out var g) && !string.IsNullOrEmpty(g);
         var nameBlockH = lines.Count * TransLineH;
 
+        // The guard label is drawn outside the box (northeast), so it no longer
+        // grows the rectangle — the box sizes to the transition name only.
         var contentW = lines.Max(l => l.Length * NameCharW);
-        if (hasGuard) contentW = Math.Max(contentW, g!.Length * GuardCharW);
 
         var w          = Math.Clamp(contentW + 2 * TransPadX, TransMinW, TransMaxW);
-        var totalTextH = nameBlockH + (hasGuard ? GuardGap + GuardLineH : 0);
+        var totalTextH = nameBlockH;
         var h          = Math.Max(TransMinH, totalTextH + 2 * TransPadY);
 
         return (lines, w, h, nameBlockH, totalTextH, hasGuard);
