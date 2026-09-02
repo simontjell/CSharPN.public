@@ -26,4 +26,8 @@
     <ProjectReference Include="..\..\src\CSharPN.Core\CSharPN.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="CSharPN.Visualizer.Tests" />
+  </ItemGroup>
+
 </Project>

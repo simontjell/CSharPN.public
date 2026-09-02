@@ -115,6 +115,10 @@
                             refX="9" refY="3.5" orient="auto">
                         <polygon points="0 0,10 3.5,0 7" class="arrowhead arrowhead-active" />
                     </marker>
+                    <marker id="ah-highlight" markerWidth="10" markerHeight="7"
+                            refX="9" refY="3.5" orient="auto">
+                        <polygon points="0 0,10 3.5,0 7" class="arrowhead arrowhead-highlight" />
+                    </marker>
                     <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
                         <feGaussianBlur stdDeviation="3" result="blur" />
                         <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
@@ -144,8 +148,11 @@
                     var cls     = "arc " + (active ? "arc-active" : "");
                     var marker  = active ? "url(#ah-active)" : "url(#ah)";
                     var inscrip = _arcInscriptions.GetValueOrDefault((arc.FromId, arc.ToId), "");
-                    var arcKey  = (arc.FromId, arc.ToId);
-                    var hasBends = _arcBends.TryGetValue(arcKey, out var bends) && bends!.Count > 0;
+                    // User bends take priority; otherwise the auto-layout's waypoints are used
+                    // (bends of long arcs, offset lines of double arcs) unless an endpoint has
+                    // been dragged, in which case the auto-route no longer applies.
+                    var bends = EffectiveWaypoints(arc);
+                    var hasBends = bends is { Count: > 0 };
 
                     // Raw border points (without arrowhead pullback) stored in data attrs for JS
                     var (epX1, epY1, epBX, epBY) = ArcBorderPoints(arc);
@@ -153,7 +160,7 @@
 
                     @if (hasBends)
                     {
-                        // User-bent arc: polyline through waypoints
+                        // Bent arc: polyline through waypoints
                         var d = BentArcPath(epX1, epY1, epBX, epBY, bends!);
                         <path data-arc-path="@arcPathKey"
                               data-arc-sx="@Fmt(epX1)" data-arc-sy="@Fmt(epY1)"
@@ -172,7 +179,7 @@
                     }
                     else
                     {
-                        // Straight arc — layout waypoints intentionally ignored until we have better routing
+                        // Straight arc
                         var (x1, y1, bx, by) = ArcLine(arc);
                         var straightD = BentArcPath(x1, y1, bx, by, []);
                         <path data-arc-path="@arcPathKey"
@@ -370,25 +377,11 @@
 </div>
 
 @code {
-    // ── Constants ──────────────────────────────────────────────────────────────
-    // Places auto-size: the ellipse grows to fit the (word-wrapped) name.
-    private const double PlaceRX     = 38;    // minimum ellipse semi-axis horizontal
-    private const double PlaceRY     = 25;    // minimum ellipse semi-axis vertical
-    private const double PlacePadX   = 10;    // horizontal text padding inside the ellipse
-    private const double PlacePadY   = 6;     // vertical text padding inside the ellipse
-    private const double PlaceLineH  = 15;    // line height for the bold 12px name font
-    private const double PlaceCharW  = 7.3;   // approx advance of bold 12px monospace
-
-    // Transitions auto-size to fit their (word-wrapped) label.
-    private const double TransMinW  = 80;    // minimum rect width
-    private const double TransMinH  = 40;    // minimum rect height
-    private const double TransMaxW  = 400;   // wrap the label once a line exceeds this width
-    private const double TransPadX  = 14;    // horizontal text padding inside the rect
-    private const double TransPadY  = 8;     // vertical text padding inside the rect
-    private const double TransLineH = 14;    // line height for the bold 11px name font
-    private const double NameCharW  = 6.8;   // approx advance of bold 11px monospace
-    private const double GuardLineH = 13;    // line height for the guard label
-    private const double GuardGap   = 4;     // gap between name block and guard line
+    // ── Constants (shared with the layout engine via NodeMetrics) ─────────────
+    private const double PlaceLineH  = NodeMetrics.PlaceLineH;
+    private const double TransLineH  = NodeMetrics.TransLineH;
+    private const double GuardLineH  = NodeMetrics.GuardLineH;
+    private const double GuardGap    = NodeMetrics.GuardGap;
 
     // ── JS interop ─────────────────────────────────────────────────────────────
     private IJSObjectReference?          _jsModule;
@@ -465,7 +458,52 @@
     {
         _dragOverrides[id] = (x, y);
         Sim.SaveNodePosition(id, x, y);
+        foreach (var key in _arcBends.Keys.Where(k => k.Item1 == id || k.Item2 == id).ToList())
+            DropStraightBends(key);
         InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// A bend that no longer bends anything — the user straightened the arc by dragging the
+    /// bend onto the line or by moving an endpoint — is dropped, so the arc becomes a plain
+    /// straight arc again. Tolerance in SVG units.
+    /// </summary>
+    private const double StraightBendTolerance = 6;
+
+    private void DropStraightBends((string From, string To) key)
+    {
+        if (!_arcBends.TryGetValue(key, out var bends) || bends.Count == 0) return;
+        var pts = new List<(double X, double Y)> { NodePos(key.From) };
+        pts.AddRange(bends);
+        pts.Add(NodePos(key.To));
+
+        bool changed = false, removed = true;
+        while (removed && pts.Count > 2)
+        {
+            removed = false;
+            for (int i = 1; i + 1 < pts.Count; i++)
+            {
+                if (DistanceToLine(pts[i], pts[i - 1], pts[i + 1]) < StraightBendTolerance)
+                {
+                    pts.RemoveAt(i);
+                    changed = removed = true;
+                    break;
+                }
+            }
+        }
+        if (!changed) return;
+
+        var remaining = pts.GetRange(1, pts.Count - 2);
+        if (remaining.Count == 0) _arcBends.Remove(key); else _arcBends[key] = remaining;
+        Sim.SaveArcBends(key.From, key.To, remaining);
+    }
+
+    private static double DistanceToLine((double X, double Y) p, (double X, double Y) a, (double X, double Y) b)
+    {
+        double dx = b.X - a.X, dy = b.Y - a.Y;
+        double len = Math.Sqrt(dx * dx + dy * dy);
+        if (len < 1e-9) return Math.Sqrt((p.X - a.X) * (p.X - a.X) + (p.Y - a.Y) * (p.Y - a.Y));
+        return Math.Abs(dx * (p.Y - a.Y) - dy * (p.X - a.X)) / len;
     }
 
     [JSInvokable]
@@ -488,6 +526,7 @@
         else
             _arcBends[key] = xs.Zip(ys, (x, y) => (x, y)).ToList();
         Sim.SaveArcBends(fromId, toId, _arcBends.GetValueOrDefault(key) ?? []);
+        DropStraightBends(key);
         InvokeAsync(StateHasChanged);
     }
 
@@ -762,6 +801,18 @@
     // ── SVG geometry ───────────────────────────────────────────────────────────
 
     /// <summary>
+    /// The waypoints an arc is drawn through: the user's bends if any, otherwise the
+    /// auto-layout's waypoints unless one of the endpoints has been dragged away from
+    /// its computed position (the auto-route is then stale and a straight line is drawn).
+    /// </summary>
+    private List<(double X, double Y)>? EffectiveWaypoints(LayoutArc arc)
+    {
+        if (_arcBends.TryGetValue((arc.FromId, arc.ToId), out var bends) && bends.Count > 0) return bends;
+        if (arc.Waypoints.Count > 0 && !HasDragOverride(arc)) return arc.Waypoints.ToList();
+        return null;
+    }
+
+    /// <summary>
     /// Returns the raw border points of the arc's source and target nodes,
     /// computed toward the first/last waypoint direction (falling back to the
     /// target/source centre when no waypoints exist).
@@ -774,13 +825,9 @@
         var (fx, fy) = NodePos(arc.FromId);
         var (tx, ty) = NodePos(arc.ToId);
 
-        _arcBends.TryGetValue((arc.FromId, arc.ToId), out var bends);
-        var firstPt = bends is { Count: > 0 } ? (bends[0].X,   bends[0].Y)
-                    : arc.Waypoints.Count > 0  ? (arc.Waypoints[0].X, arc.Waypoints[0].Y)
-                    : (tx, ty);
-        var lastPt  = bends is { Count: > 0 } ? (bends[^1].X,  bends[^1].Y)
-                    : arc.Waypoints.Count > 0  ? (arc.Waypoints[^1].X, arc.Waypoints[^1].Y)
-                    : (fx, fy);
+        var bends = EffectiveWaypoints(arc);
+        var firstPt = bends is { Count: > 0 } ? (bends[0].X,  bends[0].Y)  : (tx, ty);
+        var lastPt  = bends is { Count: > 0 } ? (bends[^1].X, bends[^1].Y) : (fx, fy);
 
         var (x1, y1) = NodeBorder(fn, fx, fy, firstPt.Item1, firstPt.Item2);
         var (bx, by) = NodeBorder(tn, tx, ty, lastPt.Item1,  lastPt.Item2);
@@ -873,77 +920,20 @@
     private static string ShortLabel(string label, int maxLen)
         => label.Length <= maxLen ? label : label[..maxLen] + "…";
 
-    // ── Node auto-sizing ─────────────────────────────────────────────────────────
+    // ── Node auto-sizing (single source of truth: NodeMetrics) ─────────────────
 
-    /// <summary>
-    /// Greedy word-wrap of a label: a new line starts whenever adding the next word
-    /// would push the line past <paramref name="maxTextW"/> px (estimated with
-    /// <paramref name="charW"/> per character). A single word longer than the max is
-    /// left on its own line (no mid-word break).
-    /// </summary>
-    private static List<string> WrapLabel(string label, double charW, double maxTextW)
-    {
-        var lines = new List<string>();
-        var cur   = "";
-        foreach (var word in label.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var cand = cur.Length == 0 ? word : cur + " " + word;
-            if (cur.Length == 0 || cand.Length * charW <= maxTextW) cur = cand;
-            else { lines.Add(cur); cur = word; }
-        }
-        if (cur.Length > 0) lines.Add(cur);
-        if (lines.Count == 0) lines.Add(label);
-        return lines;
-    }
-
-    /// <summary>
-    /// Computes the wrapped lines and the rectangle dimensions for a transition,
-    /// growing the box to fit the label (and any guard) within
-    /// <see cref="TransMinW"/>..<see cref="TransMaxW"/>. Single source of truth for
-    /// both rendering and arc border-point geometry.
-    /// </summary>
+    /// <summary>Wrapped lines and rectangle size for a transition; see <see cref="NodeMetrics.TransBox"/>.</summary>
     private (List<string> Lines, double W, double H, double NameBlockH, double TotalTextH, bool HasGuard)
         TransBox(string id, string label)
     {
-        var lines      = WrapLabel(label, NameCharW, TransMaxW - 2 * TransPadX);
-        var hasGuard   = _guardLabels.TryGetValue(id, out var g) && !string.IsNullOrEmpty(g);
-        var nameBlockH = lines.Count * TransLineH;
-
-        // The guard label is drawn outside the box (northeast), so it no longer
-        // grows the rectangle — the box sizes to the transition name only.
-        var contentW = lines.Max(l => l.Length * NameCharW);
-
-        var w          = Math.Clamp(contentW + 2 * TransPadX, TransMinW, TransMaxW);
-        var totalTextH = nameBlockH;
-        var h          = Math.Max(TransMinH, totalTextH + 2 * TransPadY);
-
-        return (lines, w, h, nameBlockH, totalTextH, hasGuard);
+        var (lines, w, h, nameBlockH) = NodeMetrics.TransBox(label);
+        var hasGuard = _guardLabels.TryGetValue(id, out var g) && !string.IsNullOrEmpty(g);
+        return (lines, w, h, nameBlockH, nameBlockH, hasGuard);
     }
 
-    /// <summary>
-    /// Computes the wrapped name lines and the ellipse semi-axes for a place,
-    /// growing the ellipse to fit the word-wrapped name within
-    /// <see cref="PlaceRX"/>/<see cref="PlaceRY"/> minimums. The width solves the
-    /// ellipse equation at the text block's top/bottom edge so the text stays inside
-    /// the curve rather than only inside the (smaller) inscribed rectangle.
-    /// Single source of truth for both rendering and arc border-point geometry.
-    /// </summary>
+    /// <summary>Wrapped lines and ellipse semi-axes for a place; see <see cref="NodeMetrics.PlaceBox"/>.</summary>
     private static (List<string> Lines, double Rx, double Ry, double NameBlockH) PlaceBox(string label)
-    {
-        var lines      = WrapLabel(label, PlaceCharW, TransMaxW - 2 * PlacePadX);
-        var nameBlockH = lines.Count * PlaceLineH;
-
-        var contentW = lines.Max(l => l.Length * PlaceCharW);
-        var halfW    = contentW / 2 + PlacePadX;
-        var halfH    = nameBlockH / 2;
-
-        var ry = Math.Max(PlaceRY, halfH + PlacePadY);
-        // At y = ±halfH the ellipse half-width is rx·√(1−(halfH/ry)²); require it ≥ halfW.
-        var shrink = Math.Sqrt(Math.Max(0.15, 1 - halfH / ry * (halfH / ry)));
-        var rx = Math.Max(PlaceRX, halfW / shrink);
-
-        return (lines, rx, ry, nameBlockH);
-    }
+        => NodeMetrics.PlaceBox(label);
 
     private static string Fmt(double v)
         => v.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);

@@ -1,4 +1,5 @@
 using CSharPN.Core;
+using CSharPN.Visualizer.Layout.Sugiyama;
 
 namespace CSharPN.Visualizer.Layout;
 
@@ -7,9 +8,9 @@ namespace CSharPN.Visualizer.Layout;
 public sealed record LayoutNode(string Id, string Label, bool IsPlace, double X, double Y);
 
 /// <summary>
-/// Arc between two nodes.  When <see cref="Waypoints"/> is non-empty the arc
-/// should be drawn as a polyline through those waypoints
-/// (used for back-arcs and forward arcs with orthogonal routing).
+/// Arc between two nodes. When <see cref="Waypoints"/> is non-empty the arc should be
+/// drawn as a polyline through those waypoints (bends of long arcs routed around
+/// intermediate layers, and the two offset lines of a place/transition double arc).
 /// </summary>
 public sealed record LayoutArc(
     string FromId,
@@ -22,36 +23,93 @@ public sealed record LayoutResult(
     double Width,
     double Height);
 
+/// <summary>A node to be laid out, with the footprint the drawing reserves for it.</summary>
+public sealed record LayoutNodeSpec(string Id, string Label, bool IsPlace, double W, double H);
+
+/// <summary>Spacing parameters of the layout (all in SVG user units, i.e. pixels at zoom 1).</summary>
+public sealed record LayoutOptions
+{
+    /// <summary>Border-to-border distance between two neighbouring layer columns.</summary>
+    public double LayerGap { get; init; } = 120;
+    /// <summary>Border-to-border distance between two neighbouring nodes in a column.</summary>
+    public double NodeGap { get; init; } = 40;
+    /// <summary>Distance between a bend of a long arc and its neighbours in the column.</summary>
+    public double EdgeGap { get; init; } = 28;
+    /// <summary>Vertical distance between two connected components of the net.</summary>
+    public double ComponentGap { get; init; } = 90;
+    /// <summary>Canvas padding around the drawing.</summary>
+    public double Padding { get; init; } = 70;
+    /// <summary>Perpendicular offset of each line of a place/transition double arc.</summary>
+    public double DoubleArcOffset { get; init; } = 12;
+
+    public static LayoutOptions Default { get; } = new();
+}
+
 // ── LayoutEngine ──────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Computes 2-D positions using the Sugiyama layered-graph framework:
-///   1. Cycle removal  (DFS back-arc detection)
-///   2. Layer assignment  (longest-path from sources)
-///   3. Crossing minimisation  (barycenter method, 4 sweeps)
-///   4. Coordinate assignment  (even spacing within layers)
-///   5. Arc routing  (orthogonal Z-shape for forward arcs; Π-shape above
-///      the net for back-arcs)
+/// Automatic layout of a Petri net with the Sugiyama framework (Sugiyama, Tagawa &amp; Toda
+/// 1981), left to right: layers are drawn as columns and the flow runs from the initially
+/// marked places towards the right.
 /// </summary>
+/// <remarks>
+/// The five phases and the algorithms chosen for each (see <c>LAYOUT.md</c> for the
+/// rationale and references):
+/// <list type="number">
+///   <item><description><b>Cycle removal</b> — depth-first search from the initially marked
+///   places; back edges are reversed (<see cref="CycleRemoval"/>).</description></item>
+///   <item><description><b>Layer assignment</b> — network simplex of Gansner et al. (1993),
+///   which minimises total arc length and therefore the number of long arcs
+///   (<see cref="NetworkSimplex"/>). Places and transitions land in alternating columns.</description></item>
+///   <item><description><b>Crossing minimisation</b> — layer sweep with barycenter / median
+///   ordering and greedy transposition, keeping the ordering with the fewest crossings as
+///   counted exactly by Barth, Jünger &amp; Mutzel (<see cref="CrossingMinimizer"/>).</description></item>
+///   <item><description><b>Coordinate assignment</b> — Brandes &amp; Köpf (2001) with the
+///   corrections of Brandes, Walter &amp; Zink (2020) (<see cref="BrandesKoepf"/>): long arcs
+///   are straight, nodes are centred over their neighbours, node sizes are respected.</description></item>
+///   <item><description><b>Arc routing</b> — long arcs bend at the dummy nodes of their
+///   intermediate layers; the two lines of a place/transition double arc are offset to
+///   opposite sides.</description></item>
+/// </list>
+/// Connected components are laid out independently and stacked vertically. The result is
+/// deterministic: all ties are resolved by declaration order in the model.
+/// </remarks>
 public static class LayoutEngine
 {
-    private const double PlaceRX  = 38.0;
-    private const double PlaceRY  = 25.0;
-    private const double TransW   = 76.0;
-    private const double TransH   = 32.0;
-    private const double LayerGap = 220.0;   // horizontal distance between layer columns
-    private const double NodeGap  = 130.0;   // vertical distance within a layer
-    private const double Pad      = 90.0;    // canvas padding (also reserves space for back-arc curves)
-    private const double RailStep = 26.0;    // horizontal spacing between parallel arc rails
+    /// <summary>Measurements of the last layout computed on this thread (for tests and tuning).</summary>
+    internal sealed class LayoutDiagnostics
+    {
+        /// <summary>Weighted segment crossings of the layered graph, summed over components.</summary>
+        public long LayeredCrossings { get; set; }
+        /// <summary>Number of dummy nodes inserted for long arcs.</summary>
+        public int DummyCount { get; set; }
+        /// <summary>The final ordered layers of every component (real and dummy nodes).</summary>
+        public List<List<List<LNode>>> ComponentLayers { get; } = [];
+    }
+
+    [ThreadStatic] private static LayoutDiagnostics? _diagnostics;
+    internal static LayoutDiagnostics Diagnostics
+    {
+        get => _diagnostics ??= new LayoutDiagnostics();
+        private set => _diagnostics = value;
+    }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
     /// <summary>Compute layout from a CpnModel (flat view of all places and transitions).</summary>
-    public static LayoutResult Compute(CpnModel model, double minW = 900, double minH = 500)
+    public static LayoutResult Compute(CpnModel model, double minW = 900, double minH = 500, LayoutOptions? options = null)
     {
-        var nodes = model.Places.Select(p => (Name: p.Name, IsPlace: true))
-            .Concat(model.Transitions.Select(t => (Name: t.Name, IsPlace: false)))
-            .ToList();
+        var specs = new List<LayoutNodeSpec>();
+        foreach (var p in model.Places)
+        {
+            var (w, h) = NodeMetrics.LayoutFootprint(p.Name, isPlace: true);
+            specs.Add(new LayoutNodeSpec(p.Name, p.Name, true, w, h));
+        }
+        foreach (var t in model.Transitions)
+        {
+            var (w, h) = NodeMetrics.LayoutFootprint(t.Name, isPlace: false, hasGuard: t.GuardLabel != "");
+            specs.Add(new LayoutNodeSpec(t.Name, t.Name, false, w, h));
+        }
 
         var edges = new List<(string From, string To)>();
         foreach (var t in model.Transitions)
@@ -63,166 +121,324 @@ public static class LayoutEngine
                 if (!edges.Contains(e)) edges.Add(e);
             }
 
-        return Compute(nodes, edges, minW, minH);
+        // The behaviour starts where the tokens are: initially marked places lead the flow.
+        var sources = model.Places.Where(p => p.InitialTokenCount > 0).Select(p => p.Name).ToHashSet();
+
+        return Compute(specs, edges, sources, minW, minH, options ?? LayoutOptions.Default);
     }
 
-    /// <summary>Compute layout from raw node/edge lists (for page views).</summary>
+    /// <summary>Compute layout from raw node/edge lists (for hierarchical page views).</summary>
     public static LayoutResult Compute(
         IReadOnlyList<(string Name, bool IsPlace)> allNames,
         IReadOnlyList<(string From, string To)> rawEdges,
-        double minW = 900, double minH = 500)
+        double minW = 900, double minH = 500, LayoutOptions? options = null)
     {
-        int n = allNames.Count;
-        if (n == 0) return new LayoutResult([], [], minW, minH);
+        var specs = allNames.Select(n =>
+        {
+            var (w, h) = NodeMetrics.LayoutFootprint(n.Name, n.IsPlace);
+            return new LayoutNodeSpec(n.Name, n.Name, n.IsPlace, w, h);
+        }).ToList();
+        return Compute(specs, rawEdges, null, minW, minH, options ?? LayoutOptions.Default);
+    }
 
-        var nameIdx = allNames.Select((x, i) => (x.Name, i))
-                              .ToDictionary(x => x.Name, x => x.i);
+    /// <summary>
+    /// Compute layout from node specifications with explicit footprints.
+    /// </summary>
+    /// <param name="preferredSources">
+    /// Ids of nodes the flow should start from (initially marked places); may be null.
+    /// </param>
+    public static LayoutResult Compute(
+        IReadOnlyList<LayoutNodeSpec> specs,
+        IReadOnlyList<(string From, string To)> rawEdges,
+        IReadOnlySet<string>? preferredSources,
+        double minW, double minH, LayoutOptions options)
+    {
+        Diagnostics = new LayoutDiagnostics();
+        if (specs.Count == 0) return new LayoutResult([], [], minW, minH);
 
-        // Build deduplicated indexed edge list
-        var edges = new List<(int F, int T)>();
+        // ── Build the graph ──────────────────────────────────────────────────
+        var nodes = specs.Select((s, i) => new LNode
+        {
+            Id = s.Id, IsPlace = s.IsPlace, W = s.W, H = s.H, Order = i
+        }).ToList();
+        var byId = new Dictionary<string, LNode>();
+        foreach (var n in nodes) byId.TryAdd(n.Id!, n);
+
+        var edges = new List<LEdge>();
+        var seen  = new HashSet<(string, string)>();
         foreach (var (from, to) in rawEdges)
         {
-            if (!nameIdx.TryGetValue(from, out var fi) ||
-                !nameIdx.TryGetValue(to, out var ti)) continue;
-            var e = (fi, ti);
-            if (!edges.Contains(e)) edges.Add(e);
+            if (!byId.TryGetValue(from, out var f) || !byId.TryGetValue(to, out var t)) continue;
+            if (from == to || !seen.Add((from, to))) continue;
+            var e = new LEdge { From = f, To = t, Order = edges.Count };
+            e.Arcs.Add(new ArcRef(from, to, OppositeToEdge: false));
+            edges.Add(e);
         }
 
-        // ── 1. Cycle removal: DFS back-arc detection ──────────────────────────
-        var reversed = FindBackArcs(n, edges);
-
-        // DAG: reversed arcs are flipped
-        var dagEdges = edges.Select((e, i) =>
-            reversed.Contains(i) ? (F: e.T, T: e.F) : (F: e.F, T: e.T)).ToList();
-
-        // ── 2. Layer assignment (longest-path) ────────────────────────────────
-        var layer = new int[n];
-        bool changed = true;
-        while (changed)
+        // ── Lay out every connected component on its own ────────────────────
+        var components = ConnectedComponents(nodes, edges);
+        var laidOut = new List<(List<LNode> Nodes, List<LEdge> Edges)>();
+        foreach (var comp in components)
         {
-            changed = false;
-            foreach (var (f, t) in dagEdges)
-                if (layer[t] <= layer[f]) { layer[t] = layer[f] + 1; changed = true; }
+            var compEdges = edges.Where(e => comp.Contains(e.From)).ToList();
+            laidOut.Add(LayoutComponent(comp, compEdges, preferredSources, options));
         }
-        int numLayers = layer.Max() + 1;
 
-        // ── 3. Crossing minimisation (barycenter, 4 sweeps) ───────────────────
-        var layerOrder = Enumerable.Range(0, numLayers)
-            .Select(l => Enumerable.Range(0, n).Where(i => layer[i] == l).ToList())
+        // ── Columns: shared across components so the layers line up ─────────
+        int layerCount = laidOut.SelectMany(c => c.Nodes).Max(n => n.Layer) + 1;
+        var maxW = new double[layerCount];
+        foreach (var n in laidOut.SelectMany(c => c.Nodes))
+            maxW[n.Layer] = Math.Max(maxW[n.Layer], n.W);
+
+        var colX = new double[layerCount];
+        colX[0] = options.Padding + maxW[0] / 2;
+        for (int l = 1; l < layerCount; l++)
+            colX[l] = colX[l - 1] + maxW[l - 1] / 2 + options.LayerGap + maxW[l] / 2;
+
+        // ── Stack components vertically ─────────────────────────────────────
+        var y = new Dictionary<LNode, double>(ReferenceEqualityComparer.Instance);
+        double curY = options.Padding;
+        foreach (var (compNodes, _) in laidOut)
+        {
+            double minY = compNodes.Min(n => n.Coord - n.H / 2);
+            double maxY = compNodes.Max(n => n.Coord + n.H / 2);
+            foreach (var n in compNodes) y[n] = n.Coord - minY + curY;
+            curY += maxY - minY + options.ComponentGap;
+        }
+        double contentBottom = curY - options.ComponentGap + options.Padding;
+        double contentRight  = colX[^1] + maxW[^1] / 2 + options.Padding;
+
+        // Centre a small drawing on the minimum canvas.
+        double dy = contentBottom < minH ? (minH - contentBottom) / 2 : 0;
+        double dx = contentRight  < minW ? (minW - contentRight) / 2 : 0;
+
+        // ── Output ──────────────────────────────────────────────────────────
+        var positions = new Dictionary<LNode, (double X, double Y)>(ReferenceEqualityComparer.Instance);
+        foreach (var n in laidOut.SelectMany(c => c.Nodes))
+            positions[n] = (Math.Round(colX[n.Layer] + dx, 1), Math.Round(y[n] + dy, 1));
+
+        var layoutNodes = specs
+            .Select(s => byId[s.Id])
+            .Select(n => new LayoutNode(n.Id!, n.Id!, n.IsPlace, positions[n].X, positions[n].Y))
             .ToList();
 
-        for (int sweep = 0; sweep < 4; sweep++)
+        var layoutArcs = new List<LayoutArc>();
+        foreach (var e in laidOut.SelectMany(c => c.Edges).OrderBy(e => e.Order))
         {
-            bool fwd = sweep % 2 == 0;
-            for (int l = fwd ? 1 : numLayers - 2;
-                 fwd ? l < numLayers : l >= 0;
-                 l += fwd ? 1 : -1)
+            // A long arc runs horizontally through the band of every intermediate column at
+            // the height of its dummy node and only slants in the gaps between columns (the
+            // box-corridor routing of dot / the polyline router of ELK), so it can never clip
+            // a node that sits above or below the dummy in the same column.
+            var polyline = new List<(double X, double Y)> { positions[e.From] };
+            foreach (var d in e.Dummies)
             {
-                int adjL = fwd ? l - 1 : l + 1;
+                double half = maxW[d.Layer] / 2;
+                var (x, yy) = positions[d];
+                polyline.Add((Math.Round(x - half, 1), yy));
+                polyline.Add((Math.Round(x + half, 1), yy));
+            }
+            polyline.Add(positions[e.To]);
 
-                var adjPos = new Dictionary<int, double>();
-                for (int k = 0; k < layerOrder[adjL].Count; k++)
-                    adjPos[layerOrder[adjL][k]] = k;
-
-                var bary = new Dictionary<int, double>();
-                for (int k = 0; k < layerOrder[l].Count; k++)
-                {
-                    int ni = layerOrder[l][k];
-                    var nbrs = dagEdges
-                        .Where(e => (e.F == ni && layer[e.T] == adjL) ||
-                                    (e.T == ni && layer[e.F] == adjL))
-                        .Select(e => e.F == ni ? e.T : e.F)
-                        .ToList();
-                    bary[ni] = nbrs.Count == 0
-                        ? (double)k
-                        : nbrs.Average(nb => adjPos.GetValueOrDefault(nb, (double)k));
-                }
-
-                layerOrder[l].Sort((a, b) => bary[a].CompareTo(bary[b]));
+            foreach (var arc in e.Arcs)
+            {
+                List<(double X, double Y)> pts;
+                if (e.Bidirectional)
+                    pts = OffsetPolyline(polyline, arc.OppositeToEdge ? -options.DoubleArcOffset : options.DoubleArcOffset);
+                else
+                    pts = SimplifyInterior(polyline);
+                if (arc.OppositeToEdge) pts.Reverse();
+                layoutArcs.Add(new LayoutArc(arc.FromId, arc.ToId, pts));
             }
         }
 
-        // ── 4. Assign 2-D coordinates ─────────────────────────────────────────
-        var pos = new (double X, double Y)[n];
-        for (int l = 0; l < numLayers; l++)
+        return new LayoutResult(layoutNodes, layoutArcs, Math.Max(minW, contentRight), Math.Max(minH, contentBottom));
+    }
+
+    // ── Sugiyama phases for one connected component ───────────────────────────
+
+    private static (List<LNode> Nodes, List<LEdge> Edges) LayoutComponent(
+        List<LNode> nodes, List<LEdge> edges, IReadOnlySet<string>? preferredSources, LayoutOptions options)
+    {
+        // 1. Cycle removal
+        IEnumerable<LNode> sources = preferredSources is null
+            ? []
+            : nodes.Where(n => preferredSources.Contains(n.Id!)).OrderBy(n => n.Order);
+        CycleRemoval.Run(nodes, edges, sources);
+
+        // Merge parallel edges (in particular place/transition double arcs) into one edge.
+        var merged = new List<LEdge>();
+        var byPair = new Dictionary<(LNode, LNode), LEdge>();
+        foreach (var e in edges)
         {
-            var grp = layerOrder[l];
-            double totalH = (grp.Count - 1) * NodeGap;
-            double startY = Pad + (Math.Max(minH - 2 * Pad, totalH) - totalH) / 2.0;
-            for (int k = 0; k < grp.Count; k++)
-                pos[grp[k]] = (Pad + l * LayerGap, startY + k * NodeGap);
-        }
-
-        double w = Math.Max(minW, pos.Max(p => p.X) + Pad);
-        double h = Math.Max(minH, pos.Max(p => p.Y) + Pad);
-
-        // ── 5. Build output ───────────────────────────────────────────────────
-        var layoutNodes = allNames.Select((nd, i) =>
-            new LayoutNode(nd.Name, nd.Name, nd.IsPlace,
-                           Math.Round(pos[i].X, 1), Math.Round(pos[i].Y, 1))).ToList();
-
-        var backArcList = reversed.ToList();
-        double maxY = pos.Max(p => p.Y);
-        double maxX = pos.Max(p => p.X);
-
-        // Compute staggered rail X values for adjacent-layer forward arcs
-        var forwardRailX = AssignRailXForLayerPairs(edges, reversed, layer, pos);
-
-        var layoutArcs = edges.Select((e, ei) =>
-        {
-            bool isBack = reversed.Contains(ei);
-            List<(double X, double Y)> wps;
-            if (isBack)
+            if (byPair.TryGetValue((e.From, e.To), out var existing))
             {
-                // Π-shape BELOW the net; each back arc gets its own row spaced below maxY
-                int idx = backArcList.IndexOf(ei);
-                double railY = maxY + 55 + idx * 36;
-                wps = [(pos[e.F].X, railY), (pos[e.T].X, railY)];
+                existing.Weight += e.Weight;
+                existing.Arcs.AddRange(e.Arcs);
             }
             else
             {
-                int layerSpan = Math.Abs(layer[e.T] - layer[e.F]);
-                double fromY = pos[e.F].Y;
-                double toY   = pos[e.T].Y;
-
-                if (layerSpan > 1)
-                {
-                    // Skip arc (crosses intermediate layers) — route on the RIGHT side
-                    // to avoid passing through nodes in intermediate layers
-                    int skipIdx = AssignSkipArcRailIndex(e, ei, edges, reversed, layer);
-                    double railX = maxX + 55 + skipIdx * RailStep;
-                    wps = [(railX, fromY), (railX, toY)];
-                }
-                else if (Math.Abs(fromY - toY) < 2)
-                {
-                    // Same-Y direct line — no waypoints needed
-                    wps = [];
-                }
-                else
-                {
-                    // Z-shape: 2 waypoints at the staggered rail X between adjacent layers
-                    double railX = forwardRailX[ei];
-                    wps = [(railX, fromY), (railX, toY)];
-                }
+                byPair[(e.From, e.To)] = e;
+                merged.Add(e);
             }
-            return new LayoutArc(allNames[e.F].Name, allNames[e.T].Name, wps);
-        }).ToList();
+        }
 
-        // Expand canvas to accommodate back-arc rails below maxY
-        double bottomRail = backArcList.Count > 0
-            ? maxY + 55 + (backArcList.Count - 1) * 36 + Pad
-            : 0;
-        h = Math.Max(h, bottomRail);
+        // 2. Layer assignment
+        var index = nodes.Select((n, i) => (n, i)).ToDictionary(x => x.n, x => x.i);
+        var rank = NetworkSimplex.Rank(nodes.Count, merged.Select(e => (index[e.From], index[e.To], e.Weight)).ToList());
+        foreach (var n in nodes) n.Layer = rank[index[n]];
 
-        // Expand canvas to accommodate skip-arc rails to the right of maxX
-        int skipCount = edges.Select((e, ei) => !reversed.Contains(ei) && Math.Abs(layer[e.T] - layer[e.F]) > 1 ? 1 : 0).Sum();
-        if (skipCount > 0)
-            w = Math.Max(w, maxX + 55 + skipCount * RailStep + Pad);
+        // Places in even columns, transitions in odd columns (parity is uniform within a
+        // component, so it suffices to look at one node).
+        var probe = nodes[0];
+        if ((probe.Layer % 2 == 1) == probe.IsPlace)
+            foreach (var n in nodes) n.Layer++;
 
-        return new LayoutResult(layoutNodes, layoutArcs, w, h);
+        // 3. Proper layering: subdivide long edges with dummy nodes
+        var all = new List<LNode>(nodes);
+        foreach (var e in merged)
+        {
+            var prev = e.From;
+            for (int l = e.From.Layer + 1; l < e.To.Layer; l++)
+            {
+                var d = new LNode
+                {
+                    Id = null, IsPlace = false, W = 0, H = 0, Order = e.Order, DummyOf = e,
+                    Layer = l, DfsOrder = e.From.DfsOrder + 0.5
+                };
+                e.Dummies.Add(d);
+                all.Add(d);
+                AddSegment(prev, d, e);
+                prev = d;
+            }
+            AddSegment(prev, e.To, e);
+        }
+
+        // 4. Crossing minimisation. The layer sweep is a local heuristic that cannot move a
+        //    whole dummy chain at once, so it is started from several deterministic initial
+        //    orders and the best result is kept: DFS order with the chains of feedback arcs
+        //    (reversed edges) below the main flow, the same with them above, and model order.
+        int layerCount = all.Max(n => n.Layer) + 1;
+        var initialOrders = new List<Func<LNode, double>>
+        {
+            n => n.IsDummy && n.DummyOf!.IsReversed ? double.MaxValue : n.DfsOrder,
+            n => n.IsDummy && n.DummyOf!.IsReversed ? double.MinValue : n.DfsOrder,
+            n => n.IsDummy ? n.DummyOf!.From.Order + 0.5 : n.Order,
+        };
+        List<List<LNode>>? layers = null;
+        long bestCrossings = long.MaxValue;
+        foreach (var key in initialOrders)
+        {
+            var candidate = Enumerable.Range(0, layerCount)
+                .Select(l => all.Where(n => n.Layer == l).OrderBy(key).ThenBy(n => n.Order).ToList())
+                .ToList();
+            CrossingMinimizer.Run(candidate);
+            long crossings = CrossingMinimizer.CountCrossings(candidate);
+            if (crossings < bestCrossings)
+            {
+                bestCrossings = crossings;
+                layers = candidate;
+            }
+            if (crossings == 0) break;
+        }
+        foreach (var layer in layers!)
+            for (int i = 0; i < layer.Count; i++) layer[i].Pos = i;
+        Diagnostics.LayeredCrossings += bestCrossings;
+        Diagnostics.DummyCount += all.Count - nodes.Count;
+        Diagnostics.ComponentLayers.Add(layers);
+
+        // 5. Coordinate assignment along the columns
+        BrandesKoepf.Assign(layers, (u, v) =>
+            u.H / 2 + v.H / 2 + (u.IsDummy || v.IsDummy ? options.EdgeGap : options.NodeGap));
+
+        return (all, merged);
     }
 
-    // ── Geometry helpers ──────────────────────────────────────────────────────
+    private static void AddSegment(LNode from, LNode to, LEdge edge)
+    {
+        var s = new LSegment(from, to, edge.Weight, edge);
+        from.Out.Add(s);
+        to.In.Add(s);
+    }
+
+    private static List<List<LNode>> ConnectedComponents(List<LNode> nodes, List<LEdge> edges)
+    {
+        var parent = Enumerable.Range(0, nodes.Count).ToArray();
+        int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
+        var index = nodes.Select((n, i) => (n, i)).ToDictionary(x => x.n, x => x.i);
+        foreach (var e in edges)
+        {
+            int a = Find(index[e.From]), b = Find(index[e.To]);
+            if (a != b) parent[Math.Max(a, b)] = Math.Min(a, b);
+        }
+        return nodes
+            .GroupBy(n => Find(index[n]))
+            .OrderBy(g => g.Key)                 // components ordered by their first node in the model
+            .Select(g => g.OrderBy(n => n.Order).ToList())
+            .ToList();
+    }
+
+    // ── Arc routing helpers ───────────────────────────────────────────────────
+
+    /// <summary>Interior points of a polyline with collinear bends removed (endpoints are node centres).</summary>
+    private static List<(double X, double Y)> SimplifyInterior(List<(double X, double Y)> polyline)
+    {
+        var pts = new List<(double X, double Y)>(polyline);
+        bool changed = true;
+        while (changed && pts.Count > 2)
+        {
+            changed = false;
+            for (int i = 1; i + 1 < pts.Count; i++)
+            {
+                if (DistanceToLine(pts[i], pts[i - 1], pts[i + 1]) < 0.5)
+                {
+                    pts.RemoveAt(i);
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        return pts.GetRange(1, pts.Count - 2);
+    }
+
+    /// <summary>
+    /// Interior points of a polyline shifted sideways by <paramref name="offset"/>, so that
+    /// the two arcs of a double arc are drawn as distinct parallel lines. A straight arc gets
+    /// two bends at one third and two thirds of its length.
+    /// </summary>
+    private static List<(double X, double Y)> OffsetPolyline(List<(double X, double Y)> polyline, double offset)
+    {
+        var pts = SimplifyInterior(polyline);
+        var full = new List<(double X, double Y)> { polyline[0] };
+        if (pts.Count == 0)
+        {
+            var (ax, ay) = polyline[0];
+            var (bx, by) = polyline[^1];
+            full.Add((ax + (bx - ax) / 3, ay + (by - ay) / 3));
+            full.Add((ax + 2 * (bx - ax) / 3, ay + 2 * (by - ay) / 3));
+        }
+        else full.AddRange(pts);
+        full.Add(polyline[^1]);
+
+        var result = new List<(double X, double Y)>();
+        for (int i = 1; i + 1 < full.Count; i++)
+        {
+            double dx = full[i + 1].X - full[i - 1].X, dy = full[i + 1].Y - full[i - 1].Y;
+            double len = Math.Sqrt(dx * dx + dy * dy);
+            if (len < 1e-9) { result.Add(full[i]); continue; }
+            result.Add((Math.Round(full[i].X - dy / len * offset, 1), Math.Round(full[i].Y + dx / len * offset, 1)));
+        }
+        return result;
+    }
+
+    private static double DistanceToLine((double X, double Y) p, (double X, double Y) a, (double X, double Y) b)
+    {
+        double dx = b.X - a.X, dy = b.Y - a.Y;
+        double len = Math.Sqrt(dx * dx + dy * dy);
+        if (len < 1e-9) return Math.Sqrt((p.X - a.X) * (p.X - a.X) + (p.Y - a.Y) * (p.Y - a.Y));
+        return Math.Abs(dx * (p.Y - a.Y) - dy * (p.X - a.X)) / len;
+    }
+
+    // ── Geometry helpers (used by the renderer) ───────────────────────────────
 
     /// <summary>
     /// Point on the border of an ellipse centred at (cx, cy) with semi-axes
@@ -248,101 +464,5 @@ public static class LayoutEngine
         double sy = Math.Abs(dy) < 0.001 ? double.MaxValue : hh / Math.Abs(dy);
         double s  = Math.Min(sx, sy);
         return (rx + s * dx, ry + s * dy);
-    }
-
-    // ── Private helpers ───────────────────────────────────────────────────────
-
-    private static HashSet<int> FindBackArcs(int n, List<(int F, int T)> edges)
-    {
-        var reversed = new HashSet<int>();
-        var adj      = Enumerable.Range(0, n).Select(_ => new List<int>()).ToArray();
-        for (int i = 0; i < edges.Count; i++) adj[edges[i].F].Add(i);
-
-        var color = new int[n];  // 0=white 1=gray 2=black
-
-        void Dfs(int u)
-        {
-            color[u] = 1;
-            foreach (int ei in adj[u])
-            {
-                int v = edges[ei].T;
-                if      (color[v] == 1) reversed.Add(ei);  // back-arc
-                else if (color[v] == 0) Dfs(v);
-            }
-            color[u] = 2;
-        }
-
-        for (int i = 0; i < n; i++) if (color[i] == 0) Dfs(i);
-        return reversed;
-    }
-
-    /// <summary>
-    /// Returns the 0-based index (slot) for a skip arc on the right-side rail,
-    /// ordered by average endpoint Y so nearby arcs get adjacent slots.
-    /// </summary>
-    private static int AssignSkipArcRailIndex(
-        (int F, int T) arc, int arcIdx,
-        List<(int F, int T)> edges, HashSet<int> reversed, int[] layer)
-    {
-        // Collect all skip arcs sorted by avg Y layer index
-        var skipArcs = edges
-            .Select((e, ei) => (e, ei))
-            .Where(x => !reversed.Contains(x.ei) && Math.Abs(layer[x.e.T] - layer[x.e.F]) > 1)
-            .OrderBy(x => (layer[x.e.F] + layer[x.e.T]) / 2.0)
-            .ThenBy(x => x.ei)
-            .Select(x => x.ei)
-            .ToList();
-        return skipArcs.IndexOf(arcIdx);
-    }
-
-    /// <summary>
-    /// Assigns a staggered rail X value to each forward arc.
-    /// Arcs that share the same (fromLayer, toLayer) pair are staggered by 16 px
-    /// increments centred on the midpoint X between the two layer columns.
-    /// </summary>
-    private static double[] AssignRailXForLayerPairs(
-        List<(int F, int T)> edges,
-        HashSet<int> reversed,
-        int[] layer,
-        (double X, double Y)[] pos)
-    {
-        var result = new double[edges.Count];
-
-        // Group forward arc indices by their (fromLayer, toLayer) pair
-        var groups = new Dictionary<(int, int), List<int>>();
-        for (int ei = 0; ei < edges.Count; ei++)
-        {
-            if (reversed.Contains(ei)) continue;
-            var (f, t) = edges[ei];
-            var key = (layer[f], layer[t]);
-            if (!groups.TryGetValue(key, out var list))
-            {
-                list = [];
-                groups[key] = list;
-            }
-            list.Add(ei);
-        }
-
-        // For each group, sort arcs by average endpoint Y then assign staggered rails.
-        // Sorting by avgY means arcs with similar vertical trajectories get adjacent rails,
-        // which minimises visual crossings between sibling arcs in the same corridor.
-        foreach (var (_, arcIndices) in groups)
-        {
-            arcIndices.Sort((ai, bi) =>
-            {
-                double avgA = (pos[edges[ai].F].Y + pos[edges[ai].T].Y) / 2.0;
-                double avgB = (pos[edges[bi].F].Y + pos[edges[bi].T].Y) / 2.0;
-                return avgA.CompareTo(avgB);
-            });
-
-            int count = arcIndices.Count;
-            // midpoint X of the corridor between the two layer columns
-            double midX = (pos[edges[arcIndices[0]].F].X + pos[edges[arcIndices[0]].T].X) / 2.0;
-            double startOffset = -(count - 1) / 2.0 * RailStep;
-            for (int i = 0; i < count; i++)
-                result[arcIndices[i]] = midX + startOffset + i * RailStep;
-        }
-
-        return result;
     }
 }
