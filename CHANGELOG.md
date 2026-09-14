@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/simontjell/CSharPN.public/compare/v0.3.1...v0.4.0) (2026-09-14)
+
+
+### Features
+
+* build PNSE'26 paper to PDF and publish to CSharPN.public ([#23](https://github.com/simontjell/CSharPN.public/issues/23)) ([9ae9493](https://github.com/simontjell/CSharPN.public/commit/9ae94933685d6be0cf155454d5eb020910abb984))
+
 ## [0.3.1](https://github.com/simontjell/CSharPN.public/compare/v0.3.0...v0.3.1) (2026-09-02)
 
 
