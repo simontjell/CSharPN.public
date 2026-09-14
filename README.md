@@ -107,7 +107,9 @@ The `vscode-extension/` folder contains *CPN Preview*, which opens the visualise
 
 ## Citing
 
-If you use CSharPN in academic work, please cite the PNSE'26 paper. A BibTeX entry will be added here once the proceedings are published.
+If you use CSharPN in academic work, please cite the PNSE'26 paper. The camera-ready
+PDF is available at [`papers/PNSE2026.pdf`](papers/PNSE2026.pdf). A BibTeX entry will be
+added here once the proceedings are published.
 
 ## License
 
