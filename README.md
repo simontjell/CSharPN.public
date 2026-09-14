@@ -107,9 +107,30 @@ The `vscode-extension/` folder contains *CPN Preview*, which opens the visualise
 
 ## Citing
 
-If you use CSharPN in academic work, please cite the PNSE'26 paper. The camera-ready
-PDF is available at [`papers/PNSE2026.pdf`](papers/PNSE2026.pdf). A BibTeX entry will be
-added here once the proceedings are published.
+If you use CSharPN in academic work, please cite the PNSE'26 paper
+([CEUR-WS Vol-4236](https://ceur-ws.org/Vol-4236/paper11.pdf); the camera-ready PDF is
+also available at [`papers/PNSE2026.pdf`](papers/PNSE2026.pdf)):
+
+```bibtex
+@inproceedings{tjell2026csharpn,
+  author    = {Simon Tjell},
+  title     = {{CSharPN: A Code-First Framework for Coloured Petri Net Modelling with C\# as Inscription Language}},
+  booktitle = {Joint Workshop Proceedings of PNSE'26, PNAS'26, ATAED'26 and PHOCON'26
+               co-located with the 47th International Conference on Application and
+               Theory of Petri Nets and Concurrency (PETRI NETS 2026)},
+  editor    = {Michael K{\"o}hler-Bu{\ss}meier and Daniel Moldt and Heiko R{\"o}lke and
+               Lorenzo Capra and Robin Bergenthum and Sander Leemans and Andrey Rivkin and
+               Uli Fahrenberg and Lo{\"i}c H{\'e}lou{\"e}t and Philipp Schlehuber-Caissier and
+               Krzysztof Ziemia{\'n}ski},
+  series    = {CEUR Workshop Proceedings},
+  volume    = {4236},
+  publisher = {CEUR-WS.org},
+  address   = {Hamburg, Germany},
+  year      = {2026},
+  issn      = {1613-0073},
+  url       = {https://ceur-ws.org/Vol-4236/paper11.pdf},
+}
+```
 
 ## License
 
