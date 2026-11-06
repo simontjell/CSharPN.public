@@ -241,7 +241,7 @@ public class GuardRuleTests : IDisposable
         var t = new RenamedVariable().T;
         t.GuardLabel.Should().Be("[x > 1]");
         t.GetArcViews().Single(a => a.Direction == ArcDirection.Output).Inscription
-            .Should().Be("IIF(ok, Of(new [] {x}), Empty())");
+            .Should().Be("ok ? x : ∅");
         t.GetEnabledBindings().SelectMany(b => b.Values.Keys).Distinct().Should().BeEquivalentTo(["x", "ok"]);
     }
 

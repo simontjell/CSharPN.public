@@ -209,8 +209,7 @@
                     var active     = _activePlaceIds.Contains(node.Id);
                     var justFired  = node.Id == _lastFiredId;
                     var (nx, ny)   = NodePos(node.Id);
-                    var markTrunc  = ShortLabel(markStr, 22);
-                    var markBoxW   = Math.Max(56.0, Math.Min(160.0, markTrunc.Length * 7.0 + 10));
+                    var markLines  = MarkingLines(place);
 
                     @* Auto-size ellipse to fit the (word-wrapped) name *@
                     var pbox       = PlaceBox(node.Label);
@@ -250,11 +249,17 @@
                         @* Current-marking box to the right *@
                         @if (tokenCount > 0 && _expandedMarkings.Contains(node.Id))
                         {
-                            <rect x="@Fmt(prx + 10)" y="-13" width="@Fmt(markBoxW)" height="26"
+                            var markBoxW = Math.Max(56.0, markLines.Max(l => l.Length) * MarkCharW + 10);
+                            var markBoxH = markLines.Count * MarkLineH + 8;
+                            <rect x="@Fmt(prx + 10)" y="@Fmt(-markBoxH / 2)" width="@Fmt(markBoxW)" height="@Fmt(markBoxH)"
                                   class="marking-box" rx="3" />
-                            @SvgTextAttr("marking-text",
-                                $"x=\"{Fmt(prx + 14)}\" y=\"0\" dominant-baseline=\"middle\"",
-                                markTrunc)
+                            @for (int mi = 0; mi < markLines.Count; mi++)
+                            {
+                                var lineY = -markBoxH / 2 + 4 + mi * MarkLineH + MarkLineH / 2;
+                                @SvgTextAttr("marking-text",
+                                    $"x=\"{Fmt(prx + 14)}\" y=\"{Fmt(lineY)}\" dominant-baseline=\"central\"",
+                                    markLines[mi])
+                            }
                         }
 
                         @* Token-count badge — at right edge of ellipse *@
@@ -1058,6 +1063,29 @@
     private bool IsArcActive(string fromId, string toId)
         => (_activePlaceIds.Contains(fromId) && _enabledTransIds.Contains(toId))
         || _enabledTransIds.Contains(fromId);
+
+    private const double MarkLineH = 12;    // marking-text is 10px monospace
+    private const double MarkCharW = 6.1;
+    private const int    MarkMaxLines = 20;
+    private const int    MarkMaxLineLen = 48;
+
+    /// <summary>
+    /// The current marking as the lines of its marking box: one term per line, each but the
+    /// last ending in <c>++</c>, as CPN Tools shows it. Long terms are shortened, and beyond
+    /// <see cref="MarkMaxLines"/> lines the rest is summarised.
+    /// </summary>
+    private static List<string> MarkingLines(IPlace? place)
+    {
+        var terms = place?.MarkingTerms ?? [];
+        if (terms.Count == 0) return ["∅"];
+        var shown = terms.Count > MarkMaxLines ? MarkMaxLines - 1 : terms.Count;
+        var lines = new List<string>();
+        for (int i = 0; i < shown; i++)
+            lines.Add(ShortLabel(terms[i], MarkMaxLineLen) + (i < terms.Count - 1 ? "++" : ""));
+        if (shown < terms.Count)
+            lines.Add($"… {terms.Count - shown} more");
+        return lines;
+    }
 
     private static string ShortLabel(string label, int maxLen)
         => label.Length <= maxLen ? label : label[..maxLen] + "…";

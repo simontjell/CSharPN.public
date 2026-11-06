@@ -676,6 +676,11 @@ public sealed class TransitionBuilder
         MemberExpression { Expression: ConstantExpression } m
             => m.Member.Name,
 
+        // Multiset<T>.Empty → ∅, as in markings
+        MemberExpression { Expression: null, Member.Name: "Empty" } m
+            when m.Member.DeclaringType is { IsGenericType: true } dt && dt.GetGenericTypeDefinition() == typeof(Multiset<>)
+            => "∅",
+
         // Static member (e.g. AllData) — Expression is null
         MemberExpression { Expression: null } m
             => m.Member.Name,
@@ -688,9 +693,16 @@ public sealed class TransitionBuilder
         BinaryExpression { NodeType: ExpressionType.ArrayIndex } b
             => $"{FormatExpr(b.Left)}[{FormatExpr(b.Right)}]",
 
-        // Binary operators
+        // Binary operators, parenthesising operands by precedence: (k + 1) * 2, k + k * 2
         BinaryExpression b
-            => $"{FormatExpr(b.Left)} {BinOpStr(b.NodeType)} {FormatExpr(b.Right)}",
+            => FormatOperand(b.Left, Precedence(b), right: false) + BinOpStr(b) +
+               FormatOperand(b.Right, Precedence(b), right: true),
+
+        // c ? a : b
+        ConditionalExpression c
+            => $"{Parenthesise(c.Test, Precedence(c.Test) <= ConditionalPrecedence)} ? " +
+               $"{Parenthesise(c.IfTrue, Precedence(c.IfTrue) < ConditionalPrecedence)} : " +
+               $"{FormatExpr(c.IfFalse)}",
 
         // Unary minus / not
         UnaryExpression { NodeType: ExpressionType.Negate } u
@@ -699,8 +711,7 @@ public sealed class TransitionBuilder
             => $"!{FormatExpr(u.Operand)}",
 
         // Constants
-        ConstantExpression { Value: null }  => "null",
-        ConstantExpression c                => c.Value!.ToString()!,
+        ConstantExpression c                => Multiset.FormatValue(c.Value),
 
         // Method calls: Multiset.Of(x), string.Format(…) etc.
         MethodCallExpression mc => FormatCall(mc),
@@ -711,6 +722,24 @@ public sealed class TransitionBuilder
         // Fallback — ToString() and clean up closure noise
         _ => CleanFallback(e)
     };
+
+    /// <summary>
+    /// The operator of <paramref name="b"/> with its surrounding spaces. On multisets the CPN ML
+    /// operators are shown, written without spaces as CPN Tools does: <c>++</c> (sum),
+    /// <c>--</c> (difference), <c>**</c> (scalar multiplication).
+    /// </summary>
+    private static string BinOpStr(BinaryExpression b)
+        => IsMultiset(b.Type) && b.NodeType switch
+           {
+               ExpressionType.Add      => "++",
+               ExpressionType.Subtract => "--",
+               ExpressionType.Multiply => "**",
+               _                       => null,
+           } is { } op
+            ? op
+            : $" {BinOpStr(b.NodeType)} ";
+
+    private static bool IsMultiset(Type t) => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Multiset<>);
 
     private static string BinOpStr(ExpressionType t) => t switch
     {
@@ -730,8 +759,90 @@ public sealed class TransitionBuilder
         _                               => t.ToString()
     };
 
+    private const int ConditionalPrecedence = 2;
+    private const int AdditivePrecedence    = 12;
+    private const int CountPrecedence       = 14;   // n`x binds tighter than any operator
+    private const int AtomPrecedence        = 20;
+
+    /// <summary>C# operator precedence of how <paramref name="e"/> is shown (higher binds tighter).</summary>
+    private static int Precedence(Expression e) => e switch
+    {
+        UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } u => Precedence(u.Operand),
+        BinaryExpression { NodeType: ExpressionType.ArrayIndex } => AtomPrecedence,
+        BinaryExpression b => b.NodeType switch
+        {
+            ExpressionType.Multiply or ExpressionType.Divide or ExpressionType.Modulo => 13,
+            ExpressionType.Add or ExpressionType.Subtract => AdditivePrecedence,
+            ExpressionType.LessThan or ExpressionType.LessThanOrEqual
+                or ExpressionType.GreaterThan or ExpressionType.GreaterThanOrEqual => 10,
+            ExpressionType.Equal or ExpressionType.NotEqual => 9,
+            ExpressionType.And => 8,
+            ExpressionType.ExclusiveOr => 7,
+            ExpressionType.Or => 6,
+            ExpressionType.AndAlso => 5,
+            ExpressionType.OrElse => 4,
+            ExpressionType.Coalesce => 3,
+            _ => AdditivePrecedence,
+        },
+        UnaryExpression { NodeType: ExpressionType.Negate or ExpressionType.Not } => 15,
+        ConditionalExpression => ConditionalPrecedence,
+        MethodCallExpression mc when MultisetCall(mc) is { } shown => shown.Precedence,
+        _ => AtomPrecedence,
+    };
+
+    private static int Precedence(BinaryExpression b) => Precedence((Expression)b);
+
+    private static string FormatOperand(Expression operand, int parent, bool right)
+    {
+        var p = Precedence(operand);
+        return Parenthesise(operand, right ? p <= parent : p < parent);
+    }
+
+    private static string Parenthesise(Expression e, bool parens)
+        => parens ? $"({FormatExpr(e)})" : FormatExpr(e);
+
+    /// <summary>
+    /// A call building a multiset, shown in CPN ML notation like markings (<see cref="Multiset{T}.ToString"/>):
+    /// <c>Multiset.Of(a, b, a)</c> as <c>2`a++1`b</c>, <c>Multiset.Repeat(a, 3)</c> as <c>3`a</c>,
+    /// <c>Multiset.Empty&lt;T&gt;()</c> as <c>∅</c>. A single element stands alone — <c>Of(a)</c>
+    /// as <c>a</c>, which CPN ML reads as <c>1`a</c>. Null for any other call.
+    /// </summary>
+    private static (string Text, int Precedence)? MultisetCall(MethodCallExpression mc)
+    {
+        if (mc.Method.DeclaringType != typeof(Multiset)) return null;
+        switch (mc.Method.Name)
+        {
+            case "Empty":
+                return ("∅", AtomPrecedence);
+
+            case "Repeat" when mc.Arguments.Count == 2:
+                return ($"{Parenthesise(mc.Arguments[1], Precedence(mc.Arguments[1]) < AtomPrecedence)}`" +
+                        $"{Parenthesise(mc.Arguments[0], Precedence(mc.Arguments[0]) < CountPrecedence)}",
+                        CountPrecedence);
+
+            case "Of" when mc.Arguments is [NewArrayExpression { NodeType: ExpressionType.NewArrayInit } arr]:
+                if (arr.Expressions.Count == 0) return ("∅", AtomPrecedence);
+                if (arr.Expressions.Count == 1)
+                    return (FormatExpr(arr.Expressions[0]), Precedence(arr.Expressions[0]));
+                // Equal elements are counted, in order of first occurrence, as in a marking.
+                var terms = arr.Expressions
+                    .GroupBy(FormatExpr)
+                    .Select(g => (Count: g.Count(), Element: g.First()))
+                    .ToList();
+                string Term((int Count, Expression Element) t)
+                    => $"{t.Count}`{Parenthesise(t.Element, Precedence(t.Element) < CountPrecedence)}";
+                return terms.Count == 1
+                    ? (Term(terms[0]), CountPrecedence)
+                    : (string.Join("++", terms.Select(Term)), AdditivePrecedence);
+
+            default:
+                return null;
+        }
+    }
+
     private static string FormatCall(MethodCallExpression mc)
     {
+        if (MultisetCall(mc) is { } shown) return shown.Text;
         var args = string.Join(", ", mc.Arguments.Select(FormatExpr));
         if (mc.Object != null)
             return $"{FormatExpr(mc.Object)}.{mc.Method.Name}({args})";

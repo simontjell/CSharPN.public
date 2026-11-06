@@ -9,8 +9,10 @@ public interface IPlace
     int TotalTokenCount { get; }
     /// <summary>Total number of tokens in the initial marking.</summary>
     int InitialTokenCount { get; }
-    /// <summary>CPN-notation string of the current marking, e.g. <c>1`a + 2`b</c>.</summary>
+    /// <summary>CPN-notation string of the current marking, e.g. <c>1`a++2`b</c>.</summary>
     string MarkingString { get; }
+    /// <summary>The terms of <see cref="MarkingString"/>, one per distinct colour (<c>1`a</c>, <c>2`b</c>).</summary>
+    IReadOnlyList<string> MarkingTerms { get; }
     /// <summary>CPN-notation string of the initial marking (as declared in the model).</summary>
     string InitialMarkingString { get; }
     /// <summary>Display name of the colour-set (C# type), e.g. INT, STRING, Packet.</summary>
@@ -59,6 +61,7 @@ public sealed class Place<T> : IPlaceInternal
     public int    TotalTokenCount      => Marking.TotalCount;
     public int    InitialTokenCount    => InitialMarking.TotalCount;
     public string MarkingString        => Marking.ToString();
+    public IReadOnlyList<string> MarkingTerms => Marking.Terms();
     public string InitialMarkingString => InitialMarking.ToString();
     public string TypeName             => NiceTypeName(typeof(T));
 

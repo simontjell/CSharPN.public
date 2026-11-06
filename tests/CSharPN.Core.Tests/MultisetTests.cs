@@ -198,13 +198,30 @@ public class MultisetTests
     [Fact]
     public void ToString_quotes_strings_so_the_empty_string_is_visible()
     {
-        Multiset.Of("").ToString().Should().Be("\"\"");
+        Multiset.Of("").ToString().Should().Be("1`\"\"");
         Multiset.Repeat("ab", 2).ToString().Should().Be("2`\"ab\"");
     }
 
     [Fact]
     public void ToString_escapes_quotes_inside_strings()
     {
-        Multiset.Of("say \"hi\"").ToString().Should().Be("\"say \\\"hi\\\"\"");
+        Multiset.Of("say \"hi\"").ToString().Should().Be("1`\"say \\\"hi\\\"\"");
+    }
+
+    [Fact]
+    public void ToString_uses_CPN_ML_notation_with_explicit_counts_and_double_plus()
+    {
+        // CPN Tools: 3`true++2`false; a count of 1 is shown too.
+        Multiset.Repeat(true, 3).Add(false, 2).ToString().Should().Be("3`true++2`false");
+        Multiset.Of(1, 2).ToString().Should().Be("1`1++1`2");
+    }
+
+    [Fact]
+    public void Terms_are_the_parts_of_ToString_and_keep_a_plus_plus_inside_a_string_intact()
+    {
+        var m = Multiset.Of("a++b").Add("c", 2);
+        m.Terms().Should().Equal("1`\"a++b\"", "2`\"c\"");
+        string.Join("++", m.Terms()).Should().Be(m.ToString());
+        Multiset<int>.Empty.Terms().Should().BeEmpty();
     }
 }

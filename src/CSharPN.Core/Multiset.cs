@@ -145,26 +145,18 @@ public sealed class Multiset<T> : IEnumerable<T>, IEquatable<Multiset<T>>
     // ── Display ───────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// CPN-style notation: <c>1`a + 2`b</c>. Strings are quoted as in CPN ML / CPN Tools
-    /// (<c>"abc"</c>), so the empty string shows as <c>""</c> rather than as nothing.
+    /// CPN ML notation, as CPN Tools shows markings: <c>3`true++2`false</c> — every element with
+    /// its count (also a count of 1), joined by the multiset sum <c>++</c>. Strings are quoted
+    /// (<c>1`"abc"</c>), so the empty string shows as <c>1`""</c> rather than as nothing.
     /// </summary>
-    public override string ToString()
-    {
-        if (_data.Count == 0) return "∅";
-        var sb = new StringBuilder();
-        bool first = true;
-        foreach (var kvp in _data)
-        {
-            if (!first) sb.Append(" + ");
-            if (kvp.Value != 1) sb.Append(kvp.Value).Append('`');
-            sb.Append(kvp.Key is string str ? QuoteString(str) : kvp.Key);
-            first = false;
-        }
-        return sb.ToString();
-    }
+    public override string ToString() => _data.Count == 0 ? "∅" : string.Join("++", Terms());
 
-    private static string QuoteString(string s)
-        => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+    /// <summary>
+    /// The terms of <see cref="ToString"/>, one per distinct colour: <c>3`true</c>, <c>2`false</c>.
+    /// For displays that put each term on a line of its own, as CPN Tools does in a marking box.
+    /// </summary>
+    public IReadOnlyList<string> Terms()
+        => _data.Select(kvp => $"{kvp.Value}`{Multiset.FormatValue(kvp.Key)}").ToList();
 }
 
 /// <summary>Non-generic factory and helper methods for <see cref="Multiset{T}"/>.</summary>
@@ -191,4 +183,17 @@ public static class Multiset
         times == 0 ? Multiset<T>.Empty : Multiset<T>.Empty.Add(item, times);
 
     public static Multiset<T> Empty<T>() where T : notnull => Multiset<T>.Empty;
+
+    /// <summary>
+    /// A colour shown as CPN ML writes it: strings quoted (<c>"abc"</c>, <c>""</c>), booleans in
+    /// lower case (<c>true</c>), anything else by its <c>ToString()</c>. Used for markings and for
+    /// constants in arc inscriptions.
+    /// </summary>
+    internal static string FormatValue(object? value) => value switch
+    {
+        null     => "null",
+        string s => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"",
+        bool b   => b ? "true" : "false",
+        _        => value.ToString() ?? "",
+    };
 }
