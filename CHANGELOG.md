@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0](https://github.com/simontjell/CSharPN.public/compare/v0.3.1...v0.4.0) (2026-11-06)
+
+
+### Features
+
+* build PNSE'26 paper to PDF and publish to CSharPN.public ([#23](https://github.com/simontjell/CSharPN.public/issues/23)) ([9ae9493](https://github.com/simontjell/CSharPN.public/commit/9ae94933685d6be0cf155454d5eb020910abb984))
+* show multisets in CPN ML notation, with line breaks in marking boxes ([#27](https://github.com/simontjell/CSharPN.public/issues/27)) ([6f91be8](https://github.com/simontjell/CSharPN.public/commit/6f91be8ba3c9d02d70cdc3cc4ee08dee263f1fa8))
+* variables are named after their C# symbols; visualizer polish ([#26](https://github.com/simontjell/CSharPN.public/issues/26)) ([1260c5e](https://github.com/simontjell/CSharPN.public/commit/1260c5e3e5c64664a5dc6e0e614ee356f09d6bf0))
+
 ## [0.3.1](https://github.com/simontjell/CSharPN.public/compare/v0.3.0...v0.3.1) (2026-09-02)
 
 
