@@ -95,13 +95,13 @@ public sealed class UserManagementModel : CpnModel
         ResetCh    = AddChannel<ResetPasswordRequest,  ApiResult>("ResetPassword");
 
         // ── Variables ──────────────────────────────────────────────────────────
-        var regReq   = new Var<Envelope<RegisterRequest>>      ("regReq");
-        var loginReq = new Var<Envelope<LoginRequest>>         ("loginReq");
-        var fpReq    = new Var<Envelope<ForgotPasswordRequest>>("fpReq");
-        var rpReq    = new Var<Envelope<ResetPasswordRequest>> ("rpReq");
-        var users    = new Var<UserDb>                         ("users");
-        var resets   = new Var<ResetDb>                        ("resets");
-        var seq      = new Var<long>                           ("seq");
+        var regReq   = new Var<Envelope<RegisterRequest>>      ();
+        var loginReq = new Var<Envelope<LoginRequest>>         ();
+        var fpReq    = new Var<Envelope<ForgotPasswordRequest>>();
+        var rpReq    = new Var<Envelope<ResetPasswordRequest>> ();
+        var users    = new Var<UserDb>                         ();
+        var resets   = new Var<ResetDb>                        ();
+        var seq      = new Var<long>                           ();
 
         // ── Register ───────────────────────────────────────────────────────────
 

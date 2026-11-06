@@ -322,6 +322,7 @@ export function initDrag(dotNetRef, svgId) {
             const pt = svgPt(e);
             labelDrag.el.setAttribute('x', pt.x - labelDrag.offX - labelDrag.gx);
             labelDrag.el.setAttribute('y', pt.y - labelDrag.offY - labelDrag.gy);
+            labelDrag.moved = true;
             return;
         }
         if (canvasDrag) {
@@ -378,11 +379,15 @@ export function initDrag(dotNetRef, svgId) {
 
     const onUp = e => {
         if (labelDrag) {
-            const lx = parseFloat(labelDrag.el.getAttribute('x'));
-            const ly = parseFloat(labelDrag.el.getAttribute('y'));
-            dotNetRef.invokeMethodAsync('UpdateLabelOffset',
-                labelDrag.id, labelDrag.kind,
-                lx - labelDrag.bx, ly - labelDrag.by).catch(() => {});
+            // A plain click (no movement) — e.g. the first half of a double-click on a
+            // variable — must not write the label's offset to the layout file.
+            if (labelDrag.moved) {
+                const lx = parseFloat(labelDrag.el.getAttribute('x'));
+                const ly = parseFloat(labelDrag.el.getAttribute('y'));
+                dotNetRef.invokeMethodAsync('UpdateLabelOffset',
+                    labelDrag.id, labelDrag.kind,
+                    lx - labelDrag.bx, ly - labelDrag.by).catch(() => {});
+            }
             setArcHighlight(svg, labelDrag.el, false);
             labelDrag = null;
             return;
@@ -406,6 +411,10 @@ export function initDrag(dotNetRef, svgId) {
         if (nodeDrag) {
             const pt = svgPt(e);
             nodeDrag.g.style.cursor = '';
+            // A plain click (no movement) — e.g. on the token badge or a transition —
+            // must not register a position override: that would mark the auto-routed
+            // arcs as stale and drop their bends.
+            if (!nodeMoved) { nodeDrag = null; return; }
             dotNetRef.invokeMethodAsync('UpdateNodePosition',
                 nodeDrag.nodeId,
                 pt.x - nodeDrag.offX,
@@ -438,6 +447,13 @@ export function initDrag(dotNetRef, svgId) {
     // ── dblclick: remove nearest waypoint ─────────────────────────────────
 
     const onDblClick = e => {
+        // A variable in an arc inscription → open its declaration in the editor.
+        const varEl = e.target.closest?.('[data-var]');
+        if (varEl) {
+            e.preventDefault(); e.stopPropagation();
+            dotNetRef.invokeMethodAsync('NavigateToVariable', varEl.dataset.transition, varEl.dataset.var).catch(() => {});
+            return;
+        }
         const pt = svgPt(e);
         const arcPathEl = nearestArcPath(svg, pt.x, pt.y, arcThreshold());
         if (!arcPathEl) return;

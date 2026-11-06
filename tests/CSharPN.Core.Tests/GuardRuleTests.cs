@@ -216,6 +216,100 @@ public class GuardRuleTests : IDisposable
         new LabelledGuard().T.GuardLabel.Should().Be("[big enough]");
     }
 
+    private sealed class RenamedVariable : CpnModel
+    {
+        public readonly Transition T;
+        public RenamedVariable()
+        {
+            var source = AddPlace("Source", Multiset.Of(1, 2));
+            var target = AddPlace<int>("Target");
+            var csharpName = new Var<int>("x");
+            var ok = new Var<bool>("ok");
+            T = AddTransition("T")
+                .Input(source, csharpName)
+                .Guard(() => csharpName.Val > 1)
+                .Output(target, () => ok.Val ? Multiset.Of(csharpName.Val) : Multiset.Empty<int>())
+                .Build();
+        }
+    }
+
+    [Fact]
+    public void Labels_use_the_variable_names_the_bindings_use_not_the_CSharp_identifiers()
+    {
+        // The name given to Var is the CPN variable; the C# local holding it is incidental.
+        // Labels and binding elements must agree on it.
+        var t = new RenamedVariable().T;
+        t.GuardLabel.Should().Be("[x > 1]");
+        t.GetArcViews().Single(a => a.Direction == ArcDirection.Output).Inscription
+            .Should().Be("IIF(ok, Of(new [] {x}), Empty())");
+        t.GetEnabledBindings().SelectMany(b => b.Values.Keys).Distinct().Should().BeEquivalentTo(["x", "ok"]);
+    }
+
+    private sealed class SymbolNamed : CpnModel
+    {
+        public readonly Transition T;
+        public readonly Var<int> Field = new([0, 10]);
+        public SymbolNamed()
+        {
+            var source = AddPlace("Source", Multiset.Of(1, 2));
+            var target = AddPlace<int>("Target");
+            var count = new Var<int>();
+            var flag = new Var<bool>();
+            T = AddTransition("T")
+                .Input(source, count)
+                .Guard(() => count.Val > 1)
+                .Output(target, () => flag.Val ? Multiset.Of(count.Val + Field.Val) : Multiset.Empty<int>())
+                .Free(Field)
+                .Build();
+        }
+    }
+
+    [Fact]
+    public void An_unnamed_variable_is_named_after_its_CSharp_symbol_everywhere()
+    {
+        var t = new SymbolNamed().T;
+        t.GuardLabel.Should().Be("[count > 1]");
+        t.GetArcViews().Single(a => a.Direction == ArcDirection.Input).Inscription.Should().Be("count");
+        t.GetArcViews().Single(a => a.Direction == ArcDirection.Output).Inscription.Should().Contain("flag").And.Contain("Field");
+        t.VariableNames.Should().BeEquivalentTo(["count", "flag", "Field"]);
+    }
+
+    private sealed class ExplicitNameWins : CpnModel
+    {
+        public readonly Transition T;
+        public ExplicitNameWins()
+        {
+            var source = AddPlace("Source", Multiset.Of(1));
+            var x = new Var<int>("n");
+            T = AddTransition("T").Input(source, x).Guard(() => x.Val > 0).Build();
+        }
+    }
+
+    [Fact]
+    public void An_explicit_name_is_kept()
+    {
+        var t = new ExplicitNameWins().T;
+        t.VariableNames.Should().Equal("n");
+        t.GuardLabel.Should().Be("[n > 0]");
+    }
+
+    private sealed class Unnameable : CpnModel
+    {
+        public Unnameable()
+        {
+            var source = AddPlace("Source", Multiset.Of(1));
+            Var<int>[] vars = [new()];
+            AddTransition("T").Input(source, vars[0]).Build();
+        }
+    }
+
+    [Fact]
+    public void A_variable_no_symbol_names_is_rejected_when_built()
+    {
+        var build = () => new Unnameable();
+        build.Should().Throw<InvalidOperationException>().WithMessage("*has no name*");
+    }
+
     // ── Runtime backstop for what the tree cannot show ────────────────────────
 
     private static readonly Place<int> Sneaky = new("Sneaky", Multiset.Of(7));

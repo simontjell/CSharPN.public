@@ -42,8 +42,8 @@ public static class HierarchicalManufacturing
             // Local: jobs currently being processed (job-id stored here).
             var inProcess = AddPlace<int>($"InProcess_{deptName}");
 
-            var job = new Var<int>("job");
-            var w   = new Var<int>("w");
+            var job = new Var<int>();
+            var w   = new Var<int>();
 
             // Start: take job from input, consume a worker, put job in InProcess.
             AddTransition($"Start_{deptName}")

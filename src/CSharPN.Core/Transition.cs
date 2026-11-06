@@ -442,7 +442,7 @@ public sealed record ArcView(IPlace Place, ArcDirection Direction, string Inscri
 /// A variable that occurs only in output-arc expressions or the guard (a <em>free variable</em>)
 /// is bound by enumerating its colour set. Variables referenced from expression-tree overloads
 /// (<see cref="Guard(Expression{Func{bool}}, string)"/>, <see cref="Output{T}(Place{T}, Expression{Func{T}})"/>,
-/// <see cref="Output{T}(Place{T}, Var{T}, string)"/>, …) are discovered automatically; variables used
+/// <see cref="Output{T}(Place{T}, Var{T}, string, string)"/>, …) are discovered automatically; variables used
 /// only inside plain <c>Func</c> lambdas must be declared with <see cref="Free{T}"/>.
 /// </para>
 /// </remarks>
@@ -474,8 +474,10 @@ public sealed class TransitionBuilder
     /// If the same variable occurs on several input arcs it is bound to the same value on all
     /// of them (unification).
     /// </summary>
-    public TransitionBuilder Input<T>(Place<T> place, Var<T> var, int count = 1) where T : notnull, IEquatable<T>
+    public TransitionBuilder Input<T>(Place<T> place, Var<T> var, int count = 1,
+        [CallerArgumentExpression(nameof(var))] string? symbol = null) where T : notnull, IEquatable<T>
     {
+        var.NameFromSymbol(symbol);
         _inputArcs.Add(new VarInputArc<T>(place, var, _getClock, count));
         return this;
     }
@@ -506,9 +508,11 @@ public sealed class TransitionBuilder
     /// When the transition occurs, the ready tokens with the smallest time stamps are removed.
     /// Only meaningful when the transition was created via <see cref="TimedCpnModel.AddTransition"/>.
     /// </summary>
-    public TransitionBuilder TimedInput<T>(Place<Timed<T>> place, Var<T> valueVar, int count = 1)
+    public TransitionBuilder TimedInput<T>(Place<Timed<T>> place, Var<T> valueVar, int count = 1,
+        [CallerArgumentExpression(nameof(valueVar))] string? symbol = null)
         where T : notnull
     {
+        valueVar.NameFromSymbol(symbol);
         _inputArcs.Add(new TimedVarInputArc<T>(place, valueVar, _getClock, count));
         return this;
     }
@@ -556,8 +560,10 @@ public sealed class TransitionBuilder
     /// a small colour set. Not needed for expression-tree overloads, which discover the variable
     /// automatically; harmless for a variable that is bound by an input arc.
     /// </summary>
-    public TransitionBuilder Free<T>(Var<T> var) where T : notnull
+    public TransitionBuilder Free<T>(Var<T> var,
+        [CallerArgumentExpression(nameof(var))] string? symbol = null) where T : notnull
     {
+        var.NameFromSymbol(symbol);
         _referencedVars.Add(var);
         return this;
     }
@@ -580,6 +586,7 @@ public sealed class TransitionBuilder
     /// </remarks>
     public TransitionBuilder Guard(Expression<Func<bool>> guard, string? label = null)
     {
+        VarCollector.Collect(guard);   // names the variables after their C# symbols
         var (problem, variables) = GuardRule.Inspect(guard);
         _guardProblem = problem;
         _guard        = guard.Compile();
@@ -594,8 +601,10 @@ public sealed class TransitionBuilder
     /// Adds an output arc that produces a single token with the current value of
     /// <paramref name="var"/>. The arc inscription defaults to the variable name.
     /// </summary>
-    public TransitionBuilder Output<T>(Place<T> place, Var<T> var, string? label = null) where T : notnull, IEquatable<T>
+    public TransitionBuilder Output<T>(Place<T> place, Var<T> var, string? label = null,
+        [CallerArgumentExpression(nameof(var))] string? symbol = null) where T : notnull, IEquatable<T>
     {
+        var.NameFromSymbol(symbol);
         _outputArcs.Add(new SingleOutputArc<T>(place, () => var.Val, label ?? var.Name));
         _referencedVars.Add(var);
         return this;
@@ -609,8 +618,8 @@ public sealed class TransitionBuilder
     /// </summary>
     public TransitionBuilder Output<T>(Place<T> place, Expression<Func<T>> expr) where T : notnull, IEquatable<T>
     {
+        _referencedVars.AddRange(VarCollector.Collect(expr));   // also names them, before the label is formatted
         _outputArcs.Add(new SingleOutputArc<T>(place, expr.Compile(), FormatExpr(expr.Body)));
-        _referencedVars.AddRange(VarCollector.Collect(expr));
         return this;
     }
 
@@ -621,8 +630,8 @@ public sealed class TransitionBuilder
     /// </summary>
     public TransitionBuilder Output<T>(Place<T> place, Expression<Func<Multiset<T>>> expr) where T : notnull, IEquatable<T>
     {
+        _referencedVars.AddRange(VarCollector.Collect(expr));   // also names them, before the label is formatted
         _outputArcs.Add(new MultisetOutputArc<T>(place, expr.Compile(), FormatExpr(expr.Body)));
-        _referencedVars.AddRange(VarCollector.Collect(expr));
         return this;
     }
 
@@ -657,7 +666,13 @@ public sealed class TransitionBuilder
         MemberExpression { Member.Name: "Val" } m
             => FormatExpr(m.Expression!),
 
-        // Closure field → variable name (e.g. the captured Var<T> instance)
+        // Captured Var<T> → its CPN name, the one binding elements show. The C# identifier
+        // holding it may differ (a renamed local), and labels must agree with the bindings.
+        MemberExpression { Expression: ConstantExpression c, Member: System.Reflection.FieldInfo f }
+            when f.GetValue(c.Value) is IVar { Name.Length: > 0 } v
+            => v.Name,
+
+        // Other closure field → the captured identifier
         MemberExpression { Expression: ConstantExpression } m
             => m.Member.Name,
 
@@ -731,11 +746,27 @@ public sealed class TransitionBuilder
 
     private static string CleanFallback(Expression e)
     {
-        var s = e.ToString();
+        var s = VarNamer.Instance.Visit(e).ToString();
         s = System.Text.RegularExpressions.Regex.Replace(s, @"value\([^)]*\)\.", "");
         s = s.Replace(".Val", "");
         if (s.Length > 2 && s[0] == '(' && s[^1] == ')') s = s[1..^1];
         return s;
+    }
+
+    /// <summary>
+    /// Replaces each captured <see cref="Var{T}"/> by a parameter carrying the variable's CPN
+    /// name, so the <c>ToString()</c> fallback shows the name binding elements use rather than
+    /// the C# identifier that happens to hold the variable.
+    /// </summary>
+    private sealed class VarNamer : ExpressionVisitor
+    {
+        public static readonly VarNamer Instance = new();
+
+        protected override Expression VisitMember(MemberExpression node)
+            => node is { Expression: ConstantExpression c, Member: System.Reflection.FieldInfo f }
+               && f.GetValue(c.Value) is IVar { Name.Length: > 0 } v
+                ? Expression.Parameter(node.Type, v.Name)
+                : base.VisitMember(node);
     }
 
     // ── Var(t) discovery in expression trees ──────────────────────────────────
@@ -760,7 +791,14 @@ public sealed class TransitionBuilder
         {
             if (typeof(IVar).IsAssignableFrom(node.Type))
             {
-                if (TryEvaluate(node) is IVar v) Add(v);
+                if (TryEvaluate(node) is IVar v)
+                {
+                    // A captured local, a field of the model or a static field: the member is
+                    // the C# symbol holding the variable, which names it unless it has a name.
+                    if (node.Member is System.Reflection.FieldInfo or System.Reflection.PropertyInfo)
+                        v.NameFromSymbol(node.Member.Name);
+                    Add(v);
+                }
                 return node;
             }
             return base.VisitMember(node);
@@ -819,10 +857,17 @@ public sealed class TransitionBuilder
                     $"Transition '{_name}': the variable '{v.Name}' occurs only in output arcs or the guard, " +
                     "and its colour set is not enumerable, so it cannot be bound (CPN Tools: \"variable cannot " +
                     "be bound\" — free variables must have a small colour set). Bind it on an input arc, or give " +
-                    "the Var a Domain (new Var<T>(name, domain)).");
+                    "the Var a Domain (new Var<T>(domain)).");
             free.Add(v);
             variables.Add(v);
         }
+
+        foreach (var v in variables.Where(v => v.Name.Length == 0))
+            throw new InvalidOperationException(
+                $"Transition '{_name}': a variable of colour set {v.GetType().GetGenericArguments()[0].Name} has no name. " +
+                "A Var is named after the C# variable or field passed to an arc or captured by an inscription; " +
+                "this one was only reached through an expression that does not name it (such as vars[i]). " +
+                "Give it a name: new Var<T>(\"name\").");
 
         var t = new Transition(_name, _inputArcs, _outputArcs, _guard, _guardLabel, variables, free);
         _model.RegisterTransition(t);

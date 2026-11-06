@@ -144,7 +144,10 @@ public sealed class Multiset<T> : IEnumerable<T>, IEquatable<Multiset<T>>
 
     // ── Display ───────────────────────────────────────────────────────────────
 
-    /// <summary>CPN-style notation: <c>1`a + 2`b</c></summary>
+    /// <summary>
+    /// CPN-style notation: <c>1`a + 2`b</c>. Strings are quoted as in CPN ML / CPN Tools
+    /// (<c>"abc"</c>), so the empty string shows as <c>""</c> rather than as nothing.
+    /// </summary>
     public override string ToString()
     {
         if (_data.Count == 0) return "∅";
@@ -154,11 +157,14 @@ public sealed class Multiset<T> : IEnumerable<T>, IEquatable<Multiset<T>>
         {
             if (!first) sb.Append(" + ");
             if (kvp.Value != 1) sb.Append(kvp.Value).Append('`');
-            sb.Append(kvp.Key);
+            sb.Append(kvp.Key is string str ? QuoteString(str) : kvp.Key);
             first = false;
         }
         return sb.ToString();
     }
+
+    private static string QuoteString(string s)
+        => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 }
 
 /// <summary>Non-generic factory and helper methods for <see cref="Multiset{T}"/>.</summary>

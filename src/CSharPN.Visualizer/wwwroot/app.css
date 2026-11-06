@@ -391,6 +391,15 @@ html, body {
     cursor: move;
 }
 
+/* A variable in an arc inscription: double-click opens its declaration */
+.arc-var {
+    cursor: pointer;
+}
+.arc-var:hover {
+    text-decoration: underline;
+    fill: var(--arc-highlight);
+}
+
 /* Green token-count badge circle – at right edge of ellipse */
 .token-badge {
     fill: #228b22;

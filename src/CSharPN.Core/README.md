@@ -29,7 +29,7 @@ public class Simple : CpnModel
         Input   = AddPlace("Input", Multiset.Of(1, 2, 3));
         Results = AddPlace<Result>("Output");
 
-        var x = new Var<int>("x");
+        var x = new Var<int>();
 
         AddTransition("Double")
             .Input(Input, x)

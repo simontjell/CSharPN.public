@@ -59,10 +59,10 @@ public sealed class NetworkProtocolTimed : TimedCpnModel
         Received = AddPlace<string>("Received");
 
         // ── Variables ─────────────────────────────────────────────────────────
-        var n    = new Var<int>("n");
-        var tm   = new Var<int>("tm");     // SendTimer value
-        var p    = new Var<Packet>("p");
-        var k    = new Var<int>("k");
+        var n    = new Var<int>();
+        var tm   = new Var<int>();     // SendTimer value
+        var p    = new Var<Packet>();
+        var k    = new Var<int>();
 
         // ── Transitions ───────────────────────────────────────────────────────
 

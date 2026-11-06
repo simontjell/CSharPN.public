@@ -20,9 +20,9 @@ public class Simple : CpnModel
         Constants = AddPlace("Constants", Multiset.Of(1, 5, 10));
 
         // Variables
-        var x = new Var<int>("x");
-        var y = new Var<int>("y");
-        var r = new Var<Result>("r");
+        var x = new Var<int>();
+        var y = new Var<int>();
+        var r = new Var<Result>();
 
         AddTransition("Double")
             .Input(Input, x)

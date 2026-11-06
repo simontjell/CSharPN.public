@@ -357,11 +357,13 @@ public class TransitionTests
     }
 
     [Fact]
-    public void Distinct_variables_with_same_name_across_transitions_throws()
+    public void Distinct_variables_with_same_name_in_different_transitions_are_allowed()
     {
+        // A binding belongs to one transition, so names need only be unique within it. Variables
+        // are named after their C# symbols, and two pages or transitions each declaring a local
+        // `p` is ordinary C#.
         var act = () => new DuplicateNameAcrossTransitions();
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Duplicate variable name 'x'*");
+        act.Should().NotThrow();
     }
 
     [Fact]

@@ -47,9 +47,9 @@ public class ReadersWriters : CpnModel
         Slots       = AddPlace("Slots", Multiset.Repeat(0, N));
 
         // Variables
-        var r = new Var<int>("r");
-        var w = new Var<int>("w");
-        var s = new Var<int>("s");
+        var r = new Var<int>();
+        var w = new Var<int>();
+        var s = new Var<int>();
 
         // 1. StartRead: reader acquires one slot
         AddTransition("Start Reading")

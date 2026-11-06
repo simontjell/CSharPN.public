@@ -64,8 +64,8 @@ public sealed class ManufacturingSystem : TimedCpnModel
             Enumerable.Range(1, CapacityB).Aggregate(Multiset<int>.Empty, (m, i) => m.Add(i, 1)));
 
         // ── Variables ─────────────────────────────────────────────────────────
-        var job = new Var<int>("job");
-        var mch = new Var<int>("mch");
+        var job = new Var<int>();
+        var mch = new Var<int>();
 
         // ── Transitions ───────────────────────────────────────────────────────
 

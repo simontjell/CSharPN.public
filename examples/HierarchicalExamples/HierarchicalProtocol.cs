@@ -51,9 +51,9 @@ public static class HierarchicalProtocol
 
             NextToSend = AddPlace<int>("NextToSend", Multiset.Of(0));
 
-            var n = new Var<int>("n");
-            var k = new Var<int>("k");
-            var p = new Var<Packet>("p_lose"); // used only for consumption
+            var n = new Var<int>();
+            var k = new Var<int>();
+            var p = new Var<Packet>(); // used only for consumption
 
             // Transmit (or retransmit) current packet.
             AddTransition("SendPacket")
@@ -101,8 +101,8 @@ public static class HierarchicalProtocol
             NextRec  = AddPlace<int>("NextRec", Multiset.Of(0));
             Received = AddPlace<string>("Received");
 
-            var p = new Var<Packet>("p");
-            var k = new Var<int>("k");
+            var p = new Var<Packet>();
+            var k = new Var<int>();
 
             // New packet (correct sequence bit): accept and send ack.
             AddTransition("ReceivePacket_New")

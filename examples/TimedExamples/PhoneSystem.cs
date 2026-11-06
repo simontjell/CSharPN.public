@@ -66,11 +66,11 @@ public sealed class PhoneSystem : TimedCpnModel
         Completed   = AddPlace<int>("Completed");
 
         // ── Variables ─────────────────────────────────────────────────────────
-        var caller = new Var<int>("caller");
-        var recv   = new Var<int>("receiver");
-        var req    = new Var<int>("req");      // request trigger (dummy value)
-        var line   = new Var<int>("line");
-        var call   = new Var<Call>("call");
+        var caller = new Var<int>();
+        var recv   = new Var<int>();
+        var req    = new Var<int>();      // request trigger (dummy value)
+        var line   = new Var<int>();
+        var call   = new Var<Call>();
 
         // ── Transitions ───────────────────────────────────────────────────────
 

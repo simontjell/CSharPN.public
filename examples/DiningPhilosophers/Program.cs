@@ -68,9 +68,9 @@ public class DiningPhilosophers : CpnModel
         Forks = AddPlace("Forks", Multiset.Of(1, 2, 3));
 
         // ── Binding variables ─────────────────────────────────────────────────
-        var p  = new Var<Philosopher>("p");
-        var f1 = new Var<int>("f1");
-        var f2 = new Var<int>("f2");
+        var p  = new Var<Philosopher>();
+        var f1 = new Var<int>();
+        var f2 = new Var<int>();
 
         // ── Transitions ───────────────────────────────────────────────────────
 

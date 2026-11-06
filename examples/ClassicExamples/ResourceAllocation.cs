@@ -54,10 +54,10 @@ public class ResourceAllocation : CpnModel
         R2 = AddPlace("R2", Multiset.Repeat(0, 2));
 
         // Variables
-        var p  = new Var<Process>("p");
-        var r  = new Var<int>("r");
-        var r1 = new Var<int>("r1");
-        var r2 = new Var<int>("r2");
+        var p  = new Var<Process>();
+        var r  = new Var<int>();
+        var r1 = new Var<int>();
+        var r2 = new Var<int>();
 
         // ── Start transitions ──────────────────────────────────────────────────
 

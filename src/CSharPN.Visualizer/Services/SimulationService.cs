@@ -43,6 +43,9 @@ public sealed class SimulationService : IAsyncDisposable
     /// <summary>Element name → line number in the source file.</summary>
     public Dictionary<string, int> SourceMap { get; set; } = [];
 
+    /// <summary>Variable name → lines of its declarations in the source file (<see cref="SourceLocator"/>).</summary>
+    public Dictionary<string, List<int>> VariableDeclarations { get; set; } = [];
+
     public IReadOnlyList<(Transition Transition, BindingSnapshot Binding)> EnabledBindings
         { get; private set; } = [];
 

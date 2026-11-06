@@ -32,6 +32,13 @@ internal static class TransitionExtensions
     /// <summary>The single enabled binding of <paramref name="t"/> satisfying <paramref name="pred"/>.</summary>
     public static BindingSnapshot Binding(this Transition t, Func<BindingSnapshot, bool> pred)
         => t.GetEnabledBindings().Single(pred);
+
+    /// <summary>
+    /// The value of the book's <c>success</c> variable in a binding of TransmitPacket or
+    /// TransmitAck: their only boolean variable. Looked up by type rather than by name because
+    /// a variable is named after the C# identifier the model happens to use.
+    /// </summary>
+    public static bool Success(this BindingSnapshot b) => b.Values.Values.OfType<bool>().Single();
 }
 
 // ── Section 2.2 / Definition 4.3: markings, Var(t), bindings, binding elements ─
@@ -43,8 +50,9 @@ public class Definition_4_3_Variables_and_bindings
     {
         // Def. 4.3 (3): Var(t) includes variables that occur only on output arcs.
         var net = new SimpleProtocol();
-        net.TransmitPacket.VariableNames.Should().BeEquivalentTo(["p", "success"]);
-        net.TransmitPacket.FreeVariableNames.Should().BeEquivalentTo(["success"]);
+        net.TransmitPacket.VariableNames.Should().HaveCount(2).And.Contain("p");
+        net.TransmitPacket.FreeVariableNames.Should().ContainSingle()
+            .Which.Should().NotBe("p");
         net.ReceivePacket.VariableNames.Should().BeEquivalentTo(["q", "k", "data"]);
         net.ReceivePacket.FreeVariableNames.Should().BeEmpty();
     }
@@ -58,9 +66,9 @@ public class Definition_4_3_Variables_and_bindings
 
         foreach (var b in net.TransmitPacket.GetEnabledBindings())
         {
-            b.Values.Keys.Should().BeEquivalentTo(["p", "success"]);
+            b.Values.Should().HaveCount(2);
             b.Values["p"].Should().BeOfType<Packet>();
-            b.Values["success"].Should().BeOfType<bool>();
+            b.Values.Values.OfType<bool>().Should().ContainSingle();
         }
     }
 
@@ -136,7 +144,7 @@ public class Definition_4_4_Enabling
 
         var bindings = net.TransmitPacket.GetEnabledBindings();
         bindings.Should().HaveCount(2);
-        bindings.Select(b => (bool)b.Values["success"]).Should().BeEquivalentTo([true, false]);
+        bindings.Select(b => b.Success()).Should().BeEquivalentTo([true, false]);
         bindings.Should().OnlyContain(b => b.Values["p"].Equals(new Packet(1, "COL")));
     }
 
@@ -190,7 +198,7 @@ public class Definition_4_5_Occurrence
         var m0 = net.GetState();
         net.SendPacket.Fire(net.SendPacket.GetEnabledBindings().Single());
 
-        var tpMinus = net.TransmitPacket.Binding(b => (bool)b.Values["success"] == false);
+        var tpMinus = net.TransmitPacket.Binding(b => !b.Success());
         net.TransmitPacket.Fire(tpMinus);
 
         net.GetState().Should().Be(m0);
@@ -202,7 +210,7 @@ public class Definition_4_5_Occurrence
         var net = new SimpleProtocol();
         net.SendPacket.Fire(net.SendPacket.GetEnabledBindings().Single());
 
-        var tpPlus = net.TransmitPacket.Binding(b => (bool)b.Values["success"]);
+        var tpPlus = net.TransmitPacket.Binding(b => b.Success());
         net.TransmitPacket.Fire(tpPlus);
 
         net.A.Marking.ShouldBe(Multiset<Packet>.Empty);
@@ -245,9 +253,9 @@ public class Definition_4_5_Occurrence
         for (int i = 0; i < 6; i++)
         {
             net.SendPacket.Fire(net.SendPacket.GetEnabledBindings().Single());
-            net.TransmitPacket.Fire(net.TransmitPacket.Binding(b => (bool)b.Values["success"]));
+            net.TransmitPacket.Fire(net.TransmitPacket.Binding(b => b.Success()));
             net.ReceivePacket.Fire(net.ReceivePacket.GetEnabledBindings().Single());
-            net.TransmitAck.Fire(net.TransmitAck.Binding(b => (bool)b.Values["success2"]));
+            net.TransmitAck.Fire(net.TransmitAck.Binding(b => b.Success()));
             net.ReceiveAck.Fire(net.ReceiveAck.GetEnabledBindings().Single());
         }
         net.DataReceived.Marking.ShouldBe(Multiset.Of("COLOURED PETRI NET"));
@@ -295,7 +303,7 @@ public class Definitions_4_4_and_4_5_Steps
         net.SendPacket.Fire(net.SendPacket.GetEnabledBindings().Single());
 
         var sp     = net.SendPacket.GetEnabledBindings().Single();
-        var tpPlus = net.TransmitPacket.Binding(b => (bool)b.Values["success"]);
+        var tpPlus = net.TransmitPacket.Binding(b => b.Success());
 
         net.IsEnabled(sp, tpPlus).Should().BeTrue();
     }
@@ -306,8 +314,8 @@ public class Definitions_4_4_and_4_5_Steps
         var net = new SimpleProtocol();
         net.SendPacket.Fire(net.SendPacket.GetEnabledBindings().Single());
 
-        var tpPlus  = net.TransmitPacket.Binding(b => (bool)b.Values["success"]);
-        var tpMinus = net.TransmitPacket.Binding(b => !(bool)b.Values["success"]);
+        var tpPlus  = net.TransmitPacket.Binding(b => b.Success());
+        var tpMinus = net.TransmitPacket.Binding(b => !b.Success());
 
         net.IsEnabled(tpPlus).Should().BeTrue();
         net.IsEnabled(tpMinus).Should().BeTrue();
@@ -320,7 +328,7 @@ public class Definitions_4_4_and_4_5_Steps
         // Def. 4.3 (6): a step is a multiset, so the same binding element may occur twice.
         var net = new SimpleProtocol();
         net.SendPacket.Fire(net.SendPacket.GetEnabledBindings().Single());
-        var tpPlus = net.TransmitPacket.Binding(b => (bool)b.Values["success"]);
+        var tpPlus = net.TransmitPacket.Binding(b => b.Success());
 
         net.IsEnabled(tpPlus, tpPlus).Should().BeFalse();    // one token on A
 
@@ -336,7 +344,7 @@ public class Definitions_4_4_and_4_5_Steps
         var net = new SimpleProtocol();
         net.SendPacket.Fire(net.SendPacket.GetEnabledBindings().Single());
         var sp     = net.SendPacket.GetEnabledBindings().Single();
-        var tpPlus = net.TransmitPacket.Binding(b => (bool)b.Values["success"]);
+        var tpPlus = net.TransmitPacket.Binding(b => b.Success());
 
         net.Occur(sp, tpPlus);
 
@@ -355,9 +363,9 @@ public class Definitions_4_4_and_4_5_Steps
 
         stepNet.Occur(
             stepNet.SendPacket.GetEnabledBindings().Single(),
-            stepNet.TransmitPacket.Binding(b => (bool)b.Values["success"]));
+            stepNet.TransmitPacket.Binding(b => b.Success()));
 
-        seqNet.TransmitPacket.Fire(seqNet.TransmitPacket.Binding(b => (bool)b.Values["success"]));
+        seqNet.TransmitPacket.Fire(seqNet.TransmitPacket.Binding(b => b.Success()));
         seqNet.SendPacket.Fire(seqNet.SendPacket.GetEnabledBindings().Single());
 
         stepNet.GetState().Should().Be(seqNet.GetState());
@@ -368,8 +376,8 @@ public class Definitions_4_4_and_4_5_Steps
     {
         var net = new SimpleProtocol();
         net.SendPacket.Fire(net.SendPacket.GetEnabledBindings().Single());
-        var tpPlus  = net.TransmitPacket.Binding(b => (bool)b.Values["success"]);
-        var tpMinus = net.TransmitPacket.Binding(b => !(bool)b.Values["success"]);
+        var tpPlus  = net.TransmitPacket.Binding(b => b.Success());
+        var tpMinus = net.TransmitPacket.Binding(b => !b.Success());
         var before  = net.GetState();
 
         var act = () => net.Occur(tpPlus, tpMinus);

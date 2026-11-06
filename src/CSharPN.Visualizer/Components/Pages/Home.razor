@@ -171,10 +171,9 @@
                               @onclick="() => OnArcClick(arc.FromId, arc.ToId)" />
                         @if (inscrip != "")
                         {
-                            var (ix, iy) = ArcInscriptionPos(epX1, epY1, epBX, epBY, null);
+                            var (ix, iy, anchor) = ArcInscriptionPlacement(arc, epX1, epY1, epBX, epBY, bends!);
                             @DraggableLabel("arc-inscription", arcPathKey, "inscription", ix, iy,
-                                "text-anchor=\"middle\" dominant-baseline=\"central\"",
-                                inscrip)
+                                anchor, inscrip, InscriptionMarkup(arc, inscrip))
                         }
                     }
                     else
@@ -194,7 +193,7 @@
                             var (ix, iy) = ArcInscriptionPos(x1, y1, bx, by, null);
                             @DraggableLabel("arc-inscription", arcPathKey, "inscription", ix, iy,
                                 "text-anchor=\"middle\" dominant-baseline=\"central\"",
-                                inscrip)
+                                inscrip, InscriptionMarkup(arc, inscrip))
                         }
                     }
                 }
@@ -408,7 +407,11 @@
 
     // Arc/guard annotations derived from the model structure
     private Dictionary<(string From, string To), string> _arcInscriptions = [];
+    // (From, To) of every arc on the current page, to find reverse partners
+    private HashSet<(string From, string To)> _arcPairs = [];
     private Dictionary<string, string>                   _guardLabels     = [];
+    // Transition name → the names of its variables (Var(t)), to find them in inscriptions
+    private Dictionary<string, HashSet<string>>          _transitionVars  = [];
     private Dictionary<string, string>                   _portLabels      = [];
     private HashSet<string>                              _expandedMarkings = [];
 
@@ -689,6 +692,44 @@
         await _jsModule.InvokeVoidAsync("postNavigate", payload);
     }
 
+    /// <summary>
+    /// Opens the declaration of variable <paramref name="name"/> of transition
+    /// <paramref name="transitionId"/> — invoked by a double-click on the variable in an arc
+    /// inscription. Among several declarations of that name the one nearest before the
+    /// transition is taken (the local of the same constructor or page).
+    /// </summary>
+    [JSInvokable]
+    public async Task NavigateToVariable(string transitionId, string name)
+    {
+        if (Sim.ModelFilePath == null || _jsModule == null) return;
+        int? near = Sim.SourceMap.TryGetValue(transitionId, out var tl) ? tl : null;
+        if (SourceLocator.DeclarationLine(Sim.VariableDeclarations, name, near) is not int line) return;
+        await _jsModule.InvokeVoidAsync("postNavigate", $"{Sim.ModelFilePath}:{line}");
+    }
+
+    /// <summary>
+    /// The inscription of <paramref name="arc"/> as SVG markup in which each variable of the
+    /// arc's transition is a <c>tspan</c> that a double-click takes to its declaration. Null
+    /// (plain text) when the model has no source file to navigate to.
+    /// </summary>
+    private string? InscriptionMarkup(LayoutArc arc, string inscription)
+    {
+        if (Sim.ModelFilePath == null || Sim.VariableDeclarations.Count == 0) return null;
+        var transition = _nodeById.TryGetValue(arc.FromId, out var fn) && !fn.IsPlace ? arc.FromId : arc.ToId;
+        if (!_transitionVars.TryGetValue(transition, out var vars) || vars.Count == 0) return null;
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var (text, isVar) in SourceLocator.SplitInscription(inscription, vars))
+        {
+            var enc = System.Net.WebUtility.HtmlEncode(text);
+            if (isVar && Sim.VariableDeclarations.ContainsKey(text))
+                sb.Append($"<tspan class=\"arc-var\" data-var=\"{enc}\" data-transition=\"{System.Net.WebUtility.HtmlEncode(transition)}\">{enc}<title>Double-click to open the declaration of {enc}</title></tspan>");
+            else
+                sb.Append(enc);
+        }
+        return sb.ToString();
+    }
+
     private void ToggleMarking(string placeId)
     {
         if (Sim.ToggleExpandedMarking(placeId))
@@ -720,6 +761,7 @@
     {
         if (Sim.Model == null) return;
         _nodeById = Sim.Layout.Nodes.ToDictionary(n => n.Id);
+        _arcPairs = Sim.Layout.Arcs.Select(a => (a.FromId, a.ToId)).ToHashSet();
         _places   = Sim.Model.Places.ToDictionary(p => p.Name);
 
         _activePlaceIds = Sim.EnabledBindings
@@ -735,9 +777,11 @@
         // Arc inscriptions and guard labels (constant per model load)
         _arcInscriptions.Clear();
         _guardLabels.Clear();
+        _transitionVars.Clear();
         foreach (var t in Sim.Model.Transitions)
         {
             _guardLabels[t.Name] = t.GuardLabel;
+            _transitionVars[t.Name] = t.VariableNames.ToHashSet();
             foreach (var av in t.GetArcViews())
             {
                 if (av.Inscription == "") continue;
@@ -809,7 +853,105 @@
     {
         if (_arcBends.TryGetValue((arc.FromId, arc.ToId), out var bends) && bends.Count > 0) return bends;
         if (arc.Waypoints.Count > 0 && !HasDragOverride(arc)) return arc.Waypoints.ToList();
+        if (HasSeparatedPartner(arc)) return SeparatedDoubleArcWaypoints(arc);
         return null;
+    }
+
+    /// <summary>Offset of each half of a separated double arc from the centre line.</summary>
+    private const double DoubleArcOffset = 12;
+
+    /// <summary>
+    /// True when the arc has a reverse partner (place→transition and transition→place
+    /// between the same two nodes) with a different inscription. Such a pair cannot be
+    /// drawn as one line with two arrowheads (CPN Tools' bidirectional arc requires equal
+    /// inscriptions), so the two arcs are drawn side by side, each with its own inscription.
+    /// </summary>
+    private bool HasSeparatedPartner(LayoutArc arc)
+        => _arcPairs.Contains((arc.ToId, arc.FromId))
+           && _arcInscriptions.GetValueOrDefault((arc.FromId, arc.ToId), "")
+              != _arcInscriptions.GetValueOrDefault((arc.ToId, arc.FromId), "");
+
+    /// <summary>
+    /// Waypoints for one half of a separated double arc: the centre line shifted
+    /// <see cref="DoubleArcOffset"/> to the arc's left (relative to its own direction), so the
+    /// reverse arc, shifted to <i>its</i> left, lands on the opposite side.
+    /// </summary>
+    private List<(double X, double Y)> SeparatedDoubleArcWaypoints(LayoutArc arc)
+    {
+        var (x1, y1, x2, y2) = ArcLine(arc);
+        double dx = x2 - x1, dy = y2 - y1, len = Math.Sqrt(dx * dx + dy * dy);
+        if (len < 1) return [];
+        double nx = -dy / len * DoubleArcOffset, ny = dx / len * DoubleArcOffset;
+        return [(x1 + dx * 0.2 + nx, y1 + dy * 0.2 + ny), (x1 + dx * 0.8 + nx, y1 + dy * 0.8 + ny)];
+    }
+
+    /// <summary>
+    /// Position and anchoring of an arc inscription. Ordinarily centred beside the arc's
+    /// midpoint; for one half of a separated double arc it goes on the outer side of that
+    /// half and is anchored so the text extends away from the line instead of across it,
+    /// keeping the two inscriptions apart.
+    /// </summary>
+    private (double X, double Y, string Anchor) ArcInscriptionPlacement(
+        LayoutArc arc, double x1, double y1, double x2, double y2, List<(double X, double Y)> bends)
+    {
+        const string centred = "text-anchor=\"middle\" dominant-baseline=\"central\"";
+        if (!HasSeparatedPartner(arc) || bends.Count == 0)
+        {
+            var (ix, iy) = ArcInscriptionPos(x1, y1, x2, y2, null);
+            return (ix, iy, centred);
+        }
+
+        // Midpoint of the drawn route, and which side of the partner's route it lies on
+        // (long double arcs may both be routed on the same side of the centre line).
+        var (mx, my) = RouteMidpoint(arc);
+        var (fx, fy) = NodePos(arc.FromId);
+        var (tx, ty) = NodePos(arc.ToId);
+        double dx = tx - fx, dy = ty - fy, len = Math.Sqrt(dx * dx + dy * dy);
+        if (len < 1) return (mx, my, centred);
+        double nx = -dy / len, ny = dx / len;
+        var partner = Sim.Layout.Arcs.First(a => a.FromId == arc.ToId && a.ToId == arc.FromId);
+        var (px, py) = RouteMidpoint(partner);
+        if ((mx - px) * nx + (my - py) * ny < 0) { nx = -nx; ny = -ny; }
+
+        double lx = mx + nx * 6, ly = my + ny * 6;
+        string anchor = nx > 0.35 ? "text-anchor=\"start\" dominant-baseline=\"central\""
+                      : nx < -0.35 ? "text-anchor=\"end\" dominant-baseline=\"central\""
+                      : ny > 0 ? "text-anchor=\"middle\" dominant-baseline=\"hanging\""
+                      : "text-anchor=\"middle\" dominant-baseline=\"text-after-edge\"";
+        return (lx, ly, anchor);
+    }
+
+    /// <summary>The point halfway along the route an arc is drawn through.</summary>
+    private (double X, double Y) RouteMidpoint(LayoutArc arc)
+    {
+        var bends = EffectiveWaypoints(arc);
+        var (x1, y1, x2, y2) = bends is { Count: > 0 } ? ArcBorderPoints(arc) : ArcLine(arc);
+        var pts = new List<(double X, double Y)> { (x1, y1) };
+        if (bends != null) pts.AddRange(bends);
+        pts.Add((x2, y2));
+        return PolylineMidpoint(pts);
+    }
+
+    /// <summary>The point halfway along a polyline, measured by length.</summary>
+    private static (double X, double Y) PolylineMidpoint(List<(double X, double Y)> pts)
+    {
+        double total = 0;
+        for (int i = 1; i < pts.Count; i++) total += Dist(pts[i - 1], pts[i]);
+        double half = total / 2;
+        for (int i = 1; i < pts.Count; i++)
+        {
+            double seg = Dist(pts[i - 1], pts[i]);
+            if (seg >= half && seg > 0)
+            {
+                double t = half / seg;
+                return (pts[i - 1].X + (pts[i].X - pts[i - 1].X) * t, pts[i - 1].Y + (pts[i].Y - pts[i - 1].Y) * t);
+            }
+            half -= seg;
+        }
+        return pts[^1];
+
+        static double Dist((double X, double Y) a, (double X, double Y) b)
+            => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
     }
 
     /// <summary>
@@ -957,13 +1099,14 @@
     /// (<paramref name="entityId"/>, <paramref name="kind"/>) is added on top. The base
     /// is emitted as data attributes so the JS drag handler can derive the new offset.
     /// Coordinates are local to the enclosing node &lt;g&gt; (or absolute for arcs).
+    /// <paramref name="contentMarkup"/>, when given, is used as the (already encoded) content.
     /// </summary>
     private MarkupString DraggableLabel(
         string cls, string entityId, string kind,
-        double baseX, double baseY, string anchorAttrs, string content)
+        double baseX, double baseY, string anchorAttrs, string content, string? contentMarkup = null)
     {
         var (dx, dy) = _labelOffsets.GetValueOrDefault((entityId, kind), (0, 0));
-        var enc = System.Net.WebUtility.HtmlEncode(content);
+        var enc = contentMarkup ?? System.Net.WebUtility.HtmlEncode(content);
         var idEnc = System.Net.WebUtility.HtmlEncode(entityId);
         return (MarkupString)(
             $"<text class=\"{cls} label-draggable\" data-label-id=\"{idEnc}\" data-label-kind=\"{kind}\" " +

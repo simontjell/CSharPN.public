@@ -57,10 +57,10 @@ public class AlternatingBitProtocol : CpnModel
         NextRec    = AddPlace("NextRec", Multiset.Of(0));
 
         // Variables
-        var k   = new Var<int>("k");
-        var pkt = new Var<Packet>("pkt");
-        var s   = new Var<int>("s");
-        var nr  = new Var<int>("nr");
+        var k   = new Var<int>();
+        var pkt = new Var<Packet>();
+        var s   = new Var<int>();
+        var nr  = new Var<int>();
 
         // 1. SendPacket: sender (re)transmits the current packet onto channel A
         AddTransition("SendPacket")

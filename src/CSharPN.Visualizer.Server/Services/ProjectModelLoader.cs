@@ -164,8 +164,12 @@ public sealed class ProjectModelLoader
         }
         catch (Exception ex)
         {
+            var inner = ex.InnerException ?? ex;
+            var hint = inner is MissingMemberException or TypeLoadException && CoreMismatch(targetPath) is { } m
+                ? $" — {m}"
+                : "";
             diagnostics.Add(new CompileDiagnostic("Error", "CPN002",
-                $"Failed to instantiate {type.Name}: {ex.InnerException?.Message ?? ex.Message}", chosen.StartLine, 1));
+                $"Failed to instantiate {type.Name}: {inner.Message}{hint}", chosen.StartLine, 1));
         }
         return new LoadResult(null, null, modelsInFile.Select(c => c.FullName).ToList(), diagnostics, project);
     }
@@ -254,13 +258,39 @@ public sealed class ProjectModelLoader
 
     private static void WarnOnCoreMismatch(string targetPath, List<CompileDiagnostic> diagnostics)
     {
+        if (CoreMismatch(targetPath) is { } message)
+            diagnostics.Add(new CompileDiagnostic("Warning", "CPN013", message, 0, 0));
+    }
+
+    /// <summary>
+    /// Describes how the project's CSharPN.Core differs from the one this process has loaded, or
+    /// null when they are the same build. Development builds all carry version 1.0.0, so the
+    /// module version id (new on every build) is compared too: a Core rebuilt after the visualizer
+    /// started is loaded under the old one, and new members are then "not found" at runtime.
+    /// </summary>
+    private static string? CoreMismatch(string targetPath)
+    {
         var builtCore = Path.Combine(Path.GetDirectoryName(targetPath)!, "CSharPN.Core.dll");
-        if (!File.Exists(builtCore)) return;
-        var hostVersion  = typeof(CpnModel).Assembly.GetName().Version;
+        if (!File.Exists(builtCore)) return null;
+        var hostAssembly = typeof(CpnModel).Assembly;
+        var hostVersion  = hostAssembly.GetName().Version;
         var builtVersion = AssemblyName.GetAssemblyName(builtCore).Version;
         if (hostVersion != builtVersion)
-            diagnostics.Add(new CompileDiagnostic("Warning", "CPN013",
-                $"The project's CSharPN.Core is {builtVersion}; the visualizer runs {hostVersion}. The model is loaded against the visualizer's version.", 0, 0));
+            return $"The project's CSharPN.Core is {builtVersion}; the visualizer runs {hostVersion}. " +
+                   "The model is loaded against the visualizer's version.";
+
+        Guid builtMvid;
+        try
+        {
+            using var pe = new System.Reflection.PortableExecutable.PEReader(File.OpenRead(builtCore));
+            var md = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(pe);
+            builtMvid = md.GetGuid(md.GetModuleDefinition().Mvid);
+        }
+        catch (Exception) { return null; }
+        return builtMvid == hostAssembly.ManifestModule.ModuleVersionId
+            ? null
+            : "CSharPN.Core has been rebuilt since the visualizer started; the model is loaded against " +
+              "the older build. Restart the visualizer to pick up the changes.";
     }
 
     // ── Load context ──────────────────────────────────────────────────────────

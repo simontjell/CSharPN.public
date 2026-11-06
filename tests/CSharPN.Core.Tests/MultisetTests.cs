@@ -194,4 +194,17 @@ public class MultisetTests
         var m = Multiset.Repeat(42, 3);
         m.ToString().Should().Contain("3`42");
     }
+
+    [Fact]
+    public void ToString_quotes_strings_so_the_empty_string_is_visible()
+    {
+        Multiset.Of("").ToString().Should().Be("\"\"");
+        Multiset.Repeat("ab", 2).ToString().Should().Be("2`\"ab\"");
+    }
+
+    [Fact]
+    public void ToString_escapes_quotes_inside_strings()
+    {
+        Multiset.Of("say \"hi\"").ToString().Should().Be("\"say \\\"hi\\\"\"");
+    }
 }

@@ -117,8 +117,8 @@ public sealed class ModelCatalog
             var idle         = AddPlace<int>("Idle", Multiset.Of(1));   // one server
             var done         = AddPlace<int>("Done");
 
-            var customer    = new Var<int>("cust");
-            var serverToken = new Var<int>("srv");
+            var customer    = new Var<int>();
+            var serverToken = new Var<int>();
 
             AddTransition("Arrive")
                 .TimedInput(arrivalPlace, customer)
@@ -183,8 +183,8 @@ public sealed class ModelCatalog
                           .Aggregate(Multiset<int>.Empty, (m, i) => m.Add(i, 1)));
             var inProcess = AddPlace<int>($"InProcess_{name}");
 
-            var job = new Var<int>("job");
-            var w   = new Var<int>("w");
+            var job = new Var<int>();
+            var w   = new Var<int>();
 
             AddTransition($"Start_{name}")
                 .Input(input,    job)
@@ -222,9 +222,9 @@ public sealed class ModelCatalog
             var nextRec    = AddPlace<int>("NextRec", Multiset.Of(0));
             var received   = AddPlace<string>("Received");
 
-            var n = new Var<int>("n");
-            var p = new Var<Packet>("p");
-            var k = new Var<int>("k");
+            var n = new Var<int>();
+            var p = new Var<Packet>();
+            var k = new Var<int>();
 
             AddTransition("SendPacket")
                 .Input(nextToSend, n)
@@ -295,9 +295,9 @@ public sealed class ModelCatalog
             var ready      = AddPlace<int>("Ready",      Multiset.Of(1));
             var consuming  = AddPlace<int>("Consuming");
 
-            var slot  = new Var<int>("slot");
-            var item  = new Var<int>("item");
-            var cons  = new Var<int>("cons");
+            var slot  = new Var<int>();
+            var item  = new Var<int>();
+            var cons  = new Var<int>();
 
             AddTransition("StartProduce")
                 .Input(idle, new Var<int>("p"))
@@ -343,10 +343,10 @@ public sealed class ModelCatalog
             var r1      = AddPlace<int>("R1",      Multiset.Of(1));
             var r2      = AddPlace<int>("R2",      Multiset.Of(1, 2));
 
-            var p   = new Var<int>("p");
-            var r   = new Var<int>("r");
-            var r2a = new Var<int>("r2a");
-            var r2b = new Var<int>("r2b");
+            var p   = new Var<int>();
+            var r   = new Var<int>();
+            var r2a = new Var<int>();
+            var r2b = new Var<int>();
 
             // P1 needs R1 only
             AddTransition("Start_P1")

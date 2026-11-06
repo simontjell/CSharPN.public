@@ -33,6 +33,9 @@ internal interface IVar
     /// exactly as CPN Tools does for variables of small colour sets.
     /// </summary>
     IEnumerable<object>? DomainObjects { get; }
+
+    /// <summary>Names the variable after a C# symbol unless it already has a name.</summary>
+    void NameFromSymbol(string symbol);
 }
 
 /// <summary>
@@ -64,7 +67,11 @@ internal interface IVar
 public sealed class Var<T> : IVar
     where T : notnull
 {
-    public string Name { get; }
+    /// <summary>
+    /// The variable's name: the explicit name given to the constructor, otherwise the C# symbol
+    /// it was first used under (empty until then).
+    /// </summary>
+    public string Name { get; private set; }
 
     /// <summary>
     /// The colour set of this variable as an enumerable set of values, or <see langword="null"/>
@@ -87,14 +94,31 @@ public sealed class Var<T> : IVar
 
     public bool IsBound { get; private set; }
 
-    /// <param name="name">Display name (must be unique within a model).</param>
+    /// <summary>
+    /// Creates a variable named after the C# symbol that holds it: the local or field passed to
+    /// an arc (<c>.Input(place, k)</c>) or captured by an inscription (<c>() =&gt; k.Val + 1</c>)
+    /// names it <c>k</c>, so arc inscriptions, guards and binding elements all show the name
+    /// used in the code.
+    /// </summary>
+    public Var() : this(name: "", domain: null) { }
+
+    /// <summary>Creates a variable named after its C# symbol (see <see cref="Var{T}()"/>) with an explicit colour set.</summary>
+    /// <param name="domain">Colour-set enumeration used when the variable occurs as a free variable.</param>
+    public Var(IEnumerable<T> domain) : this(name: "", domain: domain) { }
+
+    /// <summary>
+    /// Creates a variable with an explicit name, for when the C# symbol cannot name it (a
+    /// variable created in a loop or helper, or one passed as an expression such as
+    /// <c>vars[i]</c>) or should not (a CPN name that is not a C# identifier).
+    /// </summary>
+    /// <param name="name">Display name of the variable.</param>
     /// <param name="domain">
     /// Explicit colour-set enumeration used when the variable occurs as a free variable.
     /// Defaults to all values for <see cref="bool"/> and enum types, otherwise <see langword="null"/>.
     /// </param>
-    public Var(string name = "", IEnumerable<T>? domain = null)
+    public Var(string name, IEnumerable<T>? domain = null)
     {
-        Name   = name;
+        Name   = name ?? "";
         Domain = domain is not null ? domain.ToList().AsReadOnly() : DefaultDomain();
     }
 
@@ -105,6 +129,21 @@ public sealed class Var<T> : IVar
         if (typeof(T).IsEnum)
             return Enum.GetValues(typeof(T)).Cast<T>().ToList().AsReadOnly();
         return null;
+    }
+
+    void IVar.NameFromSymbol(string symbol) => NameFromSymbol(symbol);
+
+    /// <summary>
+    /// Names an unnamed variable after the C# symbol it is used under. The first symbol wins;
+    /// an explicit name is never replaced. Ignored unless <paramref name="symbol"/> is a plain
+    /// identifier or a member access ending in one (<c>this.k</c>, <c>Vars.k</c>).
+    /// </summary>
+    internal void NameFromSymbol(string? symbol)
+    {
+        if (Name.Length > 0 || string.IsNullOrWhiteSpace(symbol)) return;
+        var last = symbol.Trim().Split('.')[^1].TrimStart('@');
+        if (last.Length > 0 && (char.IsLetter(last[0]) || last[0] == '_') && last.All(c => char.IsLetterOrDigit(c) || c == '_'))
+            Name = last;
     }
 
     internal void Bind(T value)

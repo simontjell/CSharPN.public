@@ -45,13 +45,13 @@ public sealed class SimpleProtocol : CpnModel
         C             = AddPlace<int>("C");
         D             = AddPlace<int>("D");
 
-        var p        = new Var<Packet>("p");          // the book's (n, d)
-        var q        = new Var<Packet>("q");
-        var k        = new Var<int>("k");
-        var n        = new Var<int>("n");
-        var data     = new Var<string>("data");
-        var success  = new Var<bool>("success");
-        var success2 = new Var<bool>("success2");
+        var p        = new Var<Packet>();          // the book's (n, d)
+        var q        = new Var<Packet>();
+        var k        = new Var<int>();
+        var n        = new Var<int>();
+        var data     = new Var<string>();
+        var success  = new Var<bool>();
+        var ackSuccess = new Var<bool>();
 
         // The arc reading NextSend is deliberately declared *before* the arc that binds p:
         // arc order is irrelevant, as in CPN Tools.
@@ -79,7 +79,7 @@ public sealed class SimpleProtocol : CpnModel
 
         TransmitAck = AddTransition("TransmitAck")
             .Input(C, n)
-            .Output(D, () => success2.Val ? Multiset.Of(n.Val) : Multiset.Empty<int>())
+            .Output(D, () => ackSuccess.Val ? Multiset.Of(n.Val) : Multiset.Empty<int>())
             .Build();
 
         ReceiveAck = AddTransition("ReceiveAck")

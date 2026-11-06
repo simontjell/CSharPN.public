@@ -68,7 +68,12 @@ public sealed class ModelFileWatcher : BackgroundService
             {
                 sim.LayoutFilePath = _layoutPath;
                 sim.ModelFilePath = _modelFile;
-                try { sim.SourceMap = BuildSourceMap(File.ReadAllText(_modelFile)); }
+                try
+                {
+                    var text = File.ReadAllText(_modelFile);
+                    sim.SourceMap = BuildSourceMap(text);
+                    sim.VariableDeclarations = SourceLocator.FindVariableDeclarations(text);
+                }
                 catch { /* best effort */ }
             }
             _ = sim.LoadModelAsync(toLoad, name!, preserveMarking: false);
@@ -249,12 +254,14 @@ public sealed class ModelFileWatcher : BackgroundService
         lock (_sessLock) sessions = [.. _sessions];
 
         var sourceMap = BuildSourceMap(source);
+        var variableDeclarations = SourceLocator.FindVariableDeclarations(source);
         _log.LogInformation("ModelFileWatcher: pushing {Name} to {Count} session(s)", name, sessions.Length);
         foreach (var sim in sessions)
         {
             sim.LayoutFilePath = _layoutPath;
             sim.ModelFilePath = _modelFile;
             sim.SourceMap = sourceMap;
+            sim.VariableDeclarations = variableDeclarations;
             try
             {
                 await sim.LoadModelAsync(model, name, preserveMarking: true);

@@ -71,7 +71,7 @@ public static class CpnCodeGenerator
         {
             sb.AppendLine();
             foreach (var (varName, varType) in seenVars)
-                sb.AppendLine($"        var {varName} = new Var<{varType}>(\"{varName}\");");
+                sb.AppendLine($"        var {varName} = new Var<{varType}>();");
         }
 
         // ── Transitions ──
